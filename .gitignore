@@ -14,6 +14,9 @@
 .cache/
 compile_commands.json
 
+# Test/runtime artifacts
+*.rdb
+
 # OS
 .DS_Store
 Thumbs.db
