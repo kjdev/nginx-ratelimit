@@ -15,6 +15,7 @@ ngx_module_deps=" \
   $ngx_addon_dir/src/ngx_http_ratelimit_handler.h \
   $ngx_addon_dir/src/ngx_http_ratelimit_upstream.h \
   $ngx_addon_dir/src/ngx_http_ratelimit_reply.h \
+  $ngx_addon_dir/src/ngx_http_ratelimit_script.h \
   $ngx_addon_dir/src/ngx_http_ratelimit_util.h \
 "
 ngx_module_srcs=" \
@@ -22,6 +23,7 @@ ngx_module_srcs=" \
   $ngx_addon_dir/src/ngx_http_ratelimit_handler.c \
   $ngx_addon_dir/src/ngx_http_ratelimit_upstream.c \
   $ngx_addon_dir/src/ngx_http_ratelimit_reply.c \
+  $ngx_addon_dir/src/ngx_http_ratelimit_script.c \
   $ngx_addon_dir/src/ngx_http_ratelimit_util.c \
 "
 
