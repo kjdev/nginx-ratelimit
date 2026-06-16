@@ -3,8 +3,8 @@
 /* Reference: ngx_http_upstream_finalize_request */
 void
 ngx_http_rate_limit_finalize_upstream_request(ngx_http_request_t *r,
-                                              ngx_http_upstream_t *u,
-                                              ngx_int_t rc)
+    ngx_http_upstream_t *u,
+    ngx_int_t rc)
 {
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "finalize http rate limit request: %i", rc);
@@ -75,7 +75,7 @@ ngx_http_rate_limit_finalize_upstream_request(ngx_http_request_t *r,
 static ngx_int_t
 ngx_http_rate_limit_test_connect(ngx_connection_t *c)
 {
-    int       err;
+    int err;
     socklen_t len;
 
 #if (NGX_HAVE_KQUEUE)
@@ -107,7 +107,8 @@ ngx_http_rate_limit_test_connect(ngx_connection_t *c)
          */
 
         if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, (void *) &err, &len) ==
-            -1) {
+            -1)
+        {
             err = ngx_socket_errno;
         }
 
@@ -124,12 +125,12 @@ ngx_http_rate_limit_test_connect(ngx_connection_t *c)
 /* Reference: ngx_http_upstream_process_non_buffered_request */
 static void
 ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
-                                           ngx_uint_t do_write)
+    ngx_uint_t do_write)
 {
-    size_t               size;
-    ssize_t              n;
-    ngx_buf_t           *b;
-    ngx_connection_t    *upstream;
+    size_t size;
+    ssize_t n;
+    ngx_buf_t *b;
+    ngx_connection_t *upstream;
     ngx_http_upstream_t *u;
 
     u = r->upstream;
@@ -149,8 +150,9 @@ ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
 
             if (u->busy_bufs == NULL) {
 
-                if (u->length == 0 ||
-                    (upstream->read->eof && u->length == -1)) {
+                if (u->length == 0
+                    || (upstream->read->eof && u->length == -1))
+                {
                     ngx_http_rate_limit_finalize_upstream_request(r, u, 0);
                     return;
                 }
@@ -220,7 +222,7 @@ ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
 /* Reference: ngx_http_upstream_process_non_buffered_upstream */
 static void
 ngx_http_rate_limit_redis_rev_handler(ngx_http_request_t *r,
-                                      ngx_http_upstream_t *u)
+    ngx_http_upstream_t *u)
 {
     ngx_connection_t *c;
 
@@ -253,10 +255,10 @@ ngx_http_rate_limit_dummy_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 /* Reference: ngx_http_upstream_send_response */
 static void
 ngx_http_rate_limit_process_response(ngx_http_request_t *r,
-                                     ngx_http_upstream_t *u)
+    ngx_http_upstream_t *u)
 {
-    ssize_t                   n;
-    ngx_connection_t         *c;
+    ssize_t n;
+    ngx_connection_t *c;
     ngx_http_core_loc_conf_t *clcf;
 
     /* Not necessary, we don't send anything to the client */
@@ -274,7 +276,7 @@ ngx_http_rate_limit_process_response(ngx_http_request_t *r,
         u->input_filter_init = ngx_http_upstream_non_buffered_filter_init;
         u->input_filter = ngx_http_upstream_non_buffered_filter;
         u->input_filter_ctx = r;
-    }*/
+       }*/
 
     u->read_event_handler = ngx_http_rate_limit_redis_rev_handler;
 
@@ -284,7 +286,7 @@ ngx_http_rate_limit_process_response(ngx_http_request_t *r,
 
     /* Not needed */
     /*r->limit_rate = 0;
-    r->limit_rate_set = 1;*/
+       r->limit_rate_set = 1;*/
 
     if (u->input_filter_init(u->input_filter_ctx) == NGX_ERROR) {
         ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_ERROR);
@@ -326,8 +328,8 @@ ngx_http_rate_limit_process_response(ngx_http_request_t *r,
 void
 ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
-    ssize_t           n;
-    ngx_int_t         rc;
+    ssize_t n;
+    ngx_int_t rc;
     ngx_connection_t *c;
 
     c = u->peer.connection;
@@ -348,7 +350,7 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
         /* Ensure u->reinit_request always gets called for upstream_next */
         /*u->request_sent = 1;
 
-        ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);*/
+           ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);*/
         ngx_http_rate_limit_finalize_upstream_request(
             r, u, NGX_HTTP_SERVICE_UNAVAILABLE);
         return;

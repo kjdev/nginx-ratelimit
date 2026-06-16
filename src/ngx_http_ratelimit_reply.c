@@ -3,9 +3,9 @@
 ngx_int_t
 ngx_http_rate_limit_process_reply(ngx_http_rate_limit_ctx_t *ctx, ssize_t bytes)
 {
-    ngx_buf_t           *b;
+    ngx_buf_t *b;
     ngx_http_upstream_t *u;
-    u_char               ch, *p;
+    u_char ch, *p;
 
     u = ctx->request->upstream;
     b = &u->buffer;

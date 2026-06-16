@@ -7,7 +7,7 @@ ngx_http_rate_limit_upstream_add(ngx_http_request_t *r, ngx_url_t *url)
 {
     ngx_http_upstream_main_conf_t *umcf;
     ngx_http_upstream_srv_conf_t **uscfp;
-    ngx_uint_t                     i;
+    ngx_uint_t i;
 
     umcf = ngx_http_get_module_main_conf(r, ngx_http_upstream_module);
 
@@ -15,9 +15,10 @@ ngx_http_rate_limit_upstream_add(ngx_http_request_t *r, ngx_url_t *url)
 
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
-        if (uscfp[i]->host.len != url->host.len ||
-            ngx_strncasecmp(uscfp[i]->host.data, url->host.data,
-                            url->host.len) != 0) {
+        if (uscfp[i]->host.len != url->host.len
+            || ngx_strncasecmp(uscfp[i]->host.data, url->host.data,
+                               url->host.len) != 0)
+        {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                            "upstream_add: host not match");
             continue;
@@ -31,8 +32,9 @@ ngx_http_rate_limit_upstream_add(ngx_http_request_t *r, ngx_url_t *url)
         }
 
 #if defined(nginx_version) && nginx_version < 1011006
-        if (uscfp[i]->default_port && url->default_port &&
-            uscfp[i]->default_port != url->default_port) {
+        if (uscfp[i]->default_port && url->default_port
+            && uscfp[i]->default_port != url->default_port)
+        {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                            "upstream_add: default_port not match");
             continue;
@@ -64,9 +66,9 @@ ngx_get_num_size(uint64_t i)
 ngx_int_t
 ngx_http_rate_limit_build_command(ngx_http_request_t *r, ngx_buf_t **b)
 {
-    size_t                          len, arg_len;
-    u_char                         *p;
-    ngx_http_rate_limit_ctx_t      *ctx;
+    size_t len, arg_len;
+    u_char *p;
+    ngx_http_rate_limit_ctx_t *ctx;
     ngx_http_rate_limit_loc_conf_t *rlcf;
 
     rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
@@ -202,7 +204,7 @@ ngx_http_rate_limit_build_command(ngx_http_request_t *r, ngx_buf_t **b)
     if (p - (*b)->pos != (ssize_t) len) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "rate limit: buffer error %uz != %uz",
-                      (size_t)(p - (*b)->pos), len);
+                      (size_t) (p - (*b)->pos), len);
 
         return NGX_ERROR;
     }

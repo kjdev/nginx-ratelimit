@@ -4,6 +4,6 @@
 #include "ngx_http_ratelimit_module.h"
 
 ngx_int_t ngx_http_rate_limit_process_reply(ngx_http_rate_limit_ctx_t *ctx,
-                                            ssize_t bytes);
+    ssize_t bytes);
 
 #endif /* NGX_HTTP_RATELIMIT_REPLY_H */
