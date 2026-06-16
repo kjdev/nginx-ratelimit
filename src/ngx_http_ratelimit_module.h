@@ -34,6 +34,9 @@ typedef struct {
     ngx_http_upstream_conf_t   upstream;
     ngx_http_complex_value_t  *complex_target; /* for ratelimit_pass */
 
+    ngx_str_t                  password;  /* AUTH; empty disables AUTH */
+    ngx_int_t                  database;  /* SELECT; <=0 disables SELECT */
+
     ngx_flag_t                 enable_headers;
     ngx_uint_t                 status_code;
     ngx_uint_t                 limit_log_level;
@@ -55,6 +58,11 @@ typedef struct {
 
     /* set once EVALSHA hit NOSCRIPT and we fell back to EVAL */
     ngx_flag_t          eval_fallback;
+
+    /* AUTH/SELECT prelude sent only on a freshly opened connection */
+    ngx_chain_t        *prelude_chain;   /* built before upstream init */
+    ngx_uint_t          prelude_replies; /* +OK replies left to consume */
+    ngx_buf_t          *auth_buf;        /* AUTH buffer, zeroed when done */
 
     /* parsed variables from the redis response */
     ngx_uint_t          limit;

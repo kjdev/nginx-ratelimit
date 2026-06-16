@@ -55,6 +55,18 @@ static ngx_command_t ngx_http_ratelimit_commands[] = {
       NGX_CONF_TAKE1,
       ngx_http_ratelimit_pass, NGX_HTTP_LOC_CONF_OFFSET, 0, NULL },
 
+    { ngx_string("ratelimit_password"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
+      NGX_CONF_TAKE1,
+      ngx_conf_set_str_slot, NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_ratelimit_loc_conf_t, password), NULL },
+
+    { ngx_string("ratelimit_database"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
+      NGX_CONF_TAKE1,
+      ngx_conf_set_num_slot, NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_ratelimit_loc_conf_t, database), NULL },
+
     { ngx_string("ratelimit_headers"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_FLAG,
@@ -199,6 +211,7 @@ ngx_http_ratelimit_create_loc_conf(ngx_conf_t *cf)
 
     conf->burst = NGX_CONF_UNSET;
     conf->quantity = NGX_CONF_UNSET_UINT;
+    conf->database = NGX_CONF_UNSET;
 
     return conf;
 }
@@ -271,6 +284,9 @@ ngx_http_ratelimit_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_str_value(conf->prefix, prev->prefix, "");
     ngx_conf_merge_uint_value(conf->quantity, prev->quantity, 1);
+
+    ngx_conf_merge_str_value(conf->password, prev->password, "");
+    ngx_conf_merge_value(conf->database, prev->database, NGX_CONF_UNSET);
 
     return NGX_CONF_OK;
 }

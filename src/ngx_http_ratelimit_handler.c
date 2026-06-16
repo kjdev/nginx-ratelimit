@@ -5,6 +5,9 @@
 #include "ngx_http_ratelimit_util.h"
 
 static ngx_int_t ngx_http_ratelimit_create_request(ngx_http_request_t *r);
+static ngx_int_t ngx_http_ratelimit_build_prelude(ngx_http_request_t *r);
+static ngx_int_t ngx_http_ratelimit_consume_prelude_reply(
+    ngx_http_request_t *r, ngx_buf_t *b);
 static ngx_int_t ngx_http_ratelimit_reinit_request(ngx_http_request_t *r);
 static ngx_int_t ngx_http_ratelimit_process_header(ngx_http_request_t *r);
 static ngx_int_t ngx_http_ratelimit_filter_init(void *data);
@@ -103,6 +106,12 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
 
     ctx->request = r;
 
+    /* Build the AUTH/SELECT prelude up front (the only fallible step) so the
+     * post-init splice into request_bufs cannot fail. */
+    if (ngx_http_ratelimit_build_prelude(r) != NGX_OK) {
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
     if (ngx_http_upstream_create(r) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -162,6 +171,25 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
 
     /* Override the read event handler to our own */
     u->read_event_handler = ngx_http_ratelimit_rev_handler;
+
+    /* AUTH/SELECT is sent only on a freshly opened connection. A reused
+     * keepalive connection (peer.cached) is already authenticated, so the
+     * prelude is skipped. The prelude must precede the request, so it is only
+     * spliced while the request has not been sent yet (true for an async TCP
+     * connect, which returns NGX_AGAIN). A synchronous connect would have sent
+     * the request already; that path is left to the natural -NOAUTH handling. */
+    if (ctx->prelude_chain != NULL && !u->peer.cached && !u->request_sent) {
+        ngx_chain_t *cl;
+
+        for (cl = ctx->prelude_chain; cl->next; cl = cl->next) { /* void */ }
+
+        cl->next = u->request_bufs;
+        u->request_bufs = ctx->prelude_chain;
+
+    } else {
+        /* Prelude not sent: do not wait for its replies. */
+        ctx->prelude_replies = 0;
+    }
 
     return NGX_AGAIN;
 }
@@ -254,6 +282,136 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
     return NGX_OK;
 }
 
+/* Append one RESP command (argv/argc) as a new chain link onto *ll. */
+static ngx_int_t
+ngx_http_ratelimit_append_command(ngx_http_request_t *r, ngx_chain_t ***ll,
+    ngx_str_t *argv, ngx_uint_t argc, ngx_buf_t **out_buf)
+{
+    ngx_buf_t *b;
+    ngx_chain_t *cl;
+
+    if (ngx_http_ratelimit_build_command(r, &b, argv, argc) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    cl = ngx_alloc_chain_link(r->pool);
+    if (cl == NULL) {
+        return NGX_ERROR;
+    }
+
+    cl->buf = b;
+    cl->next = NULL;
+
+    **ll = cl;
+    *ll = &cl->next;
+
+    if (out_buf != NULL) {
+        *out_buf = b;
+    }
+
+    return NGX_OK;
+}
+
+/*
+ * Build the AUTH/SELECT prelude for this request. The chain is assembled here
+ * (the only step that allocates) and held in the ctx; the handler splices it
+ * ahead of the EVALSHA request only when the connection is freshly opened.
+ */
+static ngx_int_t
+ngx_http_ratelimit_build_prelude(ngx_http_request_t *r)
+{
+    ngx_http_ratelimit_ctx_t *ctx;
+    ngx_http_ratelimit_loc_conf_t *rlcf;
+    ngx_chain_t *head, **ll;
+    ngx_str_t argv[2];
+    ngx_uint_t count;
+    u_char *p;
+
+    ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
+    rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
+
+    head = NULL;
+    ll = &head;
+    count = 0;
+
+    if (rlcf->password.len > 0) {
+        ngx_str_set(&argv[0], "AUTH");
+        argv[1] = rlcf->password;
+
+        if (ngx_http_ratelimit_append_command(r, &ll, argv, 2, &ctx->auth_buf)
+            != NGX_OK)
+        {
+            return NGX_ERROR;
+        }
+
+        count++;
+    }
+
+    if (rlcf->database > 0) {
+        ngx_str_set(&argv[0], "SELECT");
+
+        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+        argv[1].data = p;
+        argv[1].len = ngx_sprintf(p, "%i", rlcf->database) - p;
+
+        if (ngx_http_ratelimit_append_command(r, &ll, argv, 2, NULL)
+            != NGX_OK)
+        {
+            return NGX_ERROR;
+        }
+
+        count++;
+    }
+
+    ctx->prelude_chain = head;
+    ctx->prelude_replies = count;
+
+    return NGX_OK;
+}
+
+/*
+ * Consume one AUTH/SELECT reply ("+OK" / "-ERR") sitting at the head of the
+ * buffer. NGX_AGAIN if the line has not fully arrived; NGX_ERROR on a redis
+ * error reply (the password value is never logged).
+ */
+static ngx_int_t
+ngx_http_ratelimit_consume_prelude_reply(ngx_http_request_t *r, ngx_buf_t *b)
+{
+    u_char *p;
+    ngx_str_t reply;
+
+    for (p = b->pos; p < b->last; p++) {
+        if (*p == LF) {
+            break;
+        }
+    }
+
+    if (p == b->last) {
+        /* the reply line has not fully arrived yet */
+        return NGX_AGAIN;
+    }
+
+    if (*b->pos == '+') {
+        b->pos = p + 1;
+        return NGX_OK;
+    }
+
+    reply.data = b->pos;
+    reply.len = p - b->pos;
+
+    if (reply.len > 0 && reply.data[reply.len - 1] == CR) {
+        reply.len--;
+    }
+
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                  "ratelimit: redis auth/select error reply: \"%V\"", &reply);
+
+    return NGX_ERROR;
+}
+
 static ngx_int_t
 ngx_http_ratelimit_reinit_request(ngx_http_request_t *r)
 {
@@ -279,13 +437,26 @@ ngx_http_ratelimit_process_header(ngx_http_request_t *r)
     u = r->upstream;
     b = &u->buffer;
 
-    if (b->last - b->pos < (ssize_t) sizeof(u_char)) {
-        return NGX_AGAIN;
-    }
-
     ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
     if (ctx == NULL) {
         return NGX_ERROR;
+    }
+
+    /* Consume the AUTH/SELECT "+OK" replies that precede the EVALSHA reply on
+     * a freshly opened connection, before reply.c sees the 5-integer array. */
+    while (ctx->prelude_replies > 0) {
+        ngx_int_t prc;
+
+        prc = ngx_http_ratelimit_consume_prelude_reply(r, b);
+        if (prc != NGX_OK) {
+            return prc;
+        }
+
+        ctx->prelude_replies--;
+    }
+
+    if (b->last - b->pos < (ssize_t) sizeof(u_char)) {
+        return NGX_AGAIN;
     }
 
     /* the first char is the response type */
@@ -405,6 +576,14 @@ ngx_http_ratelimit_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             (void) ngx_http_ratelimit_set_custom_header(r, &x_retry_after_header,
                                          (ngx_uint_t) ctx->retry_after);
         }
+    }
+
+    /* Wipe the AUTH password from the request buffer once it is no longer
+     * needed (the request pool is freed but not zeroed). */
+    if (ctx->auth_buf != NULL) {
+        ngx_memzero(ctx->auth_buf->start,
+                    ctx->auth_buf->end - ctx->auth_buf->start);
+        ctx->auth_buf = NULL;
     }
 
     ctx->finalized = 1;

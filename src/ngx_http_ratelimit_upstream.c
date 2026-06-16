@@ -538,5 +538,8 @@ ngx_http_ratelimit_resend_eval(ngx_http_request_t *r)
     ctx->reset = 0;
     ctx->retry_after = 0;
 
+    /* AUTH/SELECT were already sent and consumed; never resend them. */
+    ctx->prelude_replies = 0;
+
     return ngx_http_ratelimit_send_eval(r);
 }
