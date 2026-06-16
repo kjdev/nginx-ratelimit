@@ -5,7 +5,8 @@
 #include "ngx_http_ratelimit_util.h"
 
 static ngx_int_t ngx_http_ratelimit_create_request(ngx_http_request_t *r);
-static ngx_int_t ngx_http_ratelimit_build_prelude(ngx_http_request_t *r);
+static ngx_int_t ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
+    ngx_http_ratelimit_ctx_t *ctx);
 static ngx_int_t ngx_http_ratelimit_consume_prelude_reply(
     ngx_http_request_t *r, ngx_buf_t *b);
 static ngx_int_t ngx_http_ratelimit_reinit_request(ngx_http_request_t *r);
@@ -83,16 +84,18 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     len = rlcf->prefix.len;
 
     if (len > 0) {
-        n = ngx_pnalloc(r->pool, len + ctx->key.len + 2);
+        /* Build "<prefix>_<key>". The key is a length-delimited value (not
+         * NUL-terminated), so copy by length rather than with ngx_cpystrn. */
+        n = ngx_pnalloc(r->pool, len + 1 + ctx->key.len);
         if (n == NULL) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         p = ngx_cpymem(n, rlcf->prefix.data, len);
-        p = ngx_cpymem(p, "_", 1);
-        ngx_cpystrn(p, ctx->key.data, ctx->key.len + 2);
+        *p++ = '_';
+        p = ngx_cpymem(p, ctx->key.data, ctx->key.len);
 
-        ctx->key.len += len + 1;
+        ctx->key.len = p - n;
         ctx->key.data = n;
     }
 
@@ -107,8 +110,9 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     ctx->request = r;
 
     /* Build the AUTH/SELECT prelude up front (the only fallible step) so the
-     * post-init splice into request_bufs cannot fail. */
-    if (ngx_http_ratelimit_build_prelude(r) != NGX_OK) {
+     * post-init splice into request_bufs cannot fail. ctx is passed in since
+     * it is not registered with the module until after upstream setup. */
+    if (ngx_http_ratelimit_build_prelude(r, ctx) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -318,16 +322,15 @@ ngx_http_ratelimit_append_command(ngx_http_request_t *r, ngx_chain_t ***ll,
  * ahead of the EVALSHA request only when the connection is freshly opened.
  */
 static ngx_int_t
-ngx_http_ratelimit_build_prelude(ngx_http_request_t *r)
+ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
+    ngx_http_ratelimit_ctx_t *ctx)
 {
-    ngx_http_ratelimit_ctx_t *ctx;
     ngx_http_ratelimit_loc_conf_t *rlcf;
     ngx_chain_t *head, **ll;
     ngx_str_t argv[2];
     ngx_uint_t count;
     u_char *p;
 
-    ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
     rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
 
     head = NULL;
