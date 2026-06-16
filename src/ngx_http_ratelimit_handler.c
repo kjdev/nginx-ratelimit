@@ -32,7 +32,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
 
     rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
 
-    if (!rlcf->configured) {
+    if (rlcf->zone == NULL) {
         return NGX_DECLINED;
     }
 
@@ -69,7 +69,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
-    if (ngx_http_complex_value(r, &rlcf->key, &ctx->key) != NGX_OK) {
+    if (ngx_http_complex_value(r, &rlcf->zone->key, &ctx->key) != NGX_OK) {
         return NGX_ERROR;
     }
 
@@ -97,7 +97,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "the value of the \"%V\" key "
                       "is more than 65535 bytes: \"%V\"",
-                      &rlcf->key.value, &ctx->key);
+                      &rlcf->zone->key.value, &ctx->key);
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -175,7 +175,7 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
     ngx_http_ratelimit_ctx_t *ctx;
     ngx_http_ratelimit_loc_conf_t *rlcf;
     ngx_str_t argv[7];
-    ngx_uint_t limit;
+    ngx_uint_t limit, burst;
     u_char *p;
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
@@ -185,8 +185,12 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
 
     rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
 
+    /* A per-location burst overrides the zone default. */
+    burst = (rlcf->burst == NGX_CONF_UNSET)
+            ? rlcf->zone->burst : (ngx_uint_t) rlcf->burst;
+
     /* Fixed-window limit: requests plus burst headroom per window. */
-    limit = rlcf->requests + rlcf->burst;
+    limit = rlcf->zone->requests + burst;
 
     /* EVALSHA <sha> 1 <key> <limit> <window> <quantity>, falling back to
      * EVAL <script> 1 <key> ... once the server reports NOSCRIPT. */
@@ -217,7 +221,7 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
         return NGX_ERROR;
     }
     argv[5].data = p;
-    argv[5].len = ngx_sprintf(p, "%ui", rlcf->period) - p;
+    argv[5].len = ngx_sprintf(p, "%ui", rlcf->zone->period) - p;
 
     /* ARGV[3] = quantity */
     p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
