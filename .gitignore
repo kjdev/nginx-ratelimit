@@ -1,0 +1,19 @@
+# C/C++ intermediate
+*.o
+*.d
+*.so
+*.a
+
+# Editors / IDEs
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+.cache/
+compile_commands.json
+
+# OS
+.DS_Store
+Thumbs.db
