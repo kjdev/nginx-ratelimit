@@ -1,0 +1,23 @@
+Copyright (c) 2026 Tatsuya Kamijo
+Copyright (c) 2026 Bengo4.com, Inc.
+
+This product is a derivative work of:
+
+  weserv/rate-limit-nginx-module
+  https://github.com/weserv/rate-limit-nginx-module
+  License: BSD 3-Clause
+  Copyright (c) 2018-present, Andries Louw Wolthuizen and Kleis Auke Wolthuizen.
+
+Imported from upstream commit:
+  0dca5d59ed830958cd4ec1c8844fb3454b68d988 (2025-01-19)
+
+The source under src/ originates from the upstream module above. Changes
+made in this project relative to upstream:
+
+  - Renamed source files and the module identity from
+    ngx_http_rate_limit_* to ngx_http_ratelimit_*.
+  - (Subsequent changes: Redis command layer is migrated from RATER.LIMIT
+    to Lua EVALSHA;)
+
+The BSD 3-Clause license text, retaining the upstream copyright notice as
+required, is in the LICENSE file.
