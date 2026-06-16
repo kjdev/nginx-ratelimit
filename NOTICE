@@ -11,13 +11,14 @@ This product is a derivative work of:
 Imported from upstream commit:
   0dca5d59ed830958cd4ec1c8844fb3454b68d988 (2025-01-19)
 
-The source under src/ originates from the upstream module above. Changes
-made in this project relative to upstream:
+The source under src/ and the integration test under t/ originate from the
+upstream module above. Changes made in this project relative to upstream:
 
   - Renamed source files and the module identity from
     ngx_http_rate_limit_* to ngx_http_ratelimit_*.
   - (Subsequent changes: Redis command layer is migrated from RATER.LIMIT
-    to Lua EVALSHA;)
+    to Lua EVALSHA; t/sanity.t is keptas the imported behavioral baseline
+    and will be adapted accordingly.)
 
 The BSD 3-Clause license text, retaining the upstream copyright notice as
 required, is in the LICENSE file.
