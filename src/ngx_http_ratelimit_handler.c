@@ -446,8 +446,9 @@ ngx_http_ratelimit_process_header(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
-    /* Consume the AUTH/SELECT "+OK" replies that precede the EVALSHA reply on
-    * a freshly opened connection, before reply.c sees the 5-integer array. */
+    /* Consume the AUTH/SELECT "+OK" replies that precede the EVALSHA reply
+     * on a freshly opened connection, before reply.c sees the 5-integer
+     * array. */
     while (ctx->prelude_replies > 0) {
         ngx_int_t prc;
 
