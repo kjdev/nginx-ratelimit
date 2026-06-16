@@ -1,5 +1,6 @@
 #include "ngx_http_ratelimit_module.h"
 #include "ngx_http_ratelimit_handler.h"
+#include "ngx_http_ratelimit_script.h"
 #include "ngx_http_ratelimit_util.h"
 
 static ngx_int_t ngx_http_rate_limit_init(ngx_conf_t *cf);
@@ -360,6 +361,9 @@ ngx_http_rate_limit_init(ngx_conf_t *cf)
     }
 
     *h = ngx_http_rate_limit_handler;
+
+    /* Cache the script SHA1 for EVALSHA before any request runs. */
+    ngx_http_ratelimit_script_init();
 
     return NGX_OK;
 }

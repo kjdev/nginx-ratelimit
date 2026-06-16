@@ -1,4 +1,9 @@
 #include "ngx_http_ratelimit_upstream.h"
+#include "ngx_http_ratelimit_module.h"
+
+static ngx_int_t ngx_http_ratelimit_send_eval(ngx_http_request_t *r);
+static void ngx_http_ratelimit_send_eval_handler(ngx_http_request_t *r,
+    ngx_http_upstream_t *u);
 
 /* Reference: ngx_http_upstream_finalize_request */
 void
@@ -447,4 +452,91 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
     u->length = -1;
 
     ngx_http_rate_limit_process_response(r, u);
+}
+
+/* Write the rebuilt request (EVAL) to the upstream connection. */
+static ngx_int_t
+ngx_http_ratelimit_send_eval(ngx_http_request_t *r)
+{
+    ssize_t n, size;
+    ngx_buf_t *b;
+    ngx_connection_t *c;
+    ngx_http_upstream_t *u;
+
+    u = r->upstream;
+    c = u->peer.connection;
+    b = u->request_bufs->buf;
+
+    while (b->pos < b->last) {
+        size = b->last - b->pos;
+
+        n = c->send(c, b->pos, size);
+
+        if (n == NGX_AGAIN) {
+            /* The socket is not writable yet; flush the rest from a write
+             * event. The read handler stays in place for the reply. */
+            u->write_event_handler = ngx_http_ratelimit_send_eval_handler;
+
+            if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
+                return NGX_ERROR;
+            }
+
+            return NGX_OK;
+        }
+
+        if (n == NGX_ERROR) {
+            return NGX_ERROR;
+        }
+
+        b->pos += n;
+    }
+
+    /* Fully sent; we never write again on this request. */
+    u->write_event_handler = ngx_http_rate_limit_dummy_handler;
+
+    return NGX_OK;
+}
+
+static void
+ngx_http_ratelimit_send_eval_handler(ngx_http_request_t *r,
+    ngx_http_upstream_t *u)
+{
+    if (ngx_http_ratelimit_send_eval(r) != NGX_OK) {
+        ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_ERROR);
+    }
+}
+
+ngx_int_t
+ngx_http_ratelimit_resend_eval(ngx_http_request_t *r)
+{
+    ngx_int_t rc;
+    ngx_http_upstream_t *u;
+    ngx_http_rate_limit_ctx_t *ctx;
+
+    u = r->upstream;
+
+    ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
+    if (ctx == NULL) {
+        return NGX_ERROR;
+    }
+
+    /* Latch the fallback so create_request emits EVAL and we never loop. */
+    ctx->eval_fallback = 1;
+
+    rc = u->create_request(r);
+    if (rc != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    /* Discard the NOSCRIPT reply and reset the parser for the EVAL reply. */
+    u->buffer.pos = u->buffer.start;
+    u->buffer.last = u->buffer.start;
+
+    ctx->state = 0;
+    ctx->limit = 0;
+    ctx->remaining = 0;
+    ctx->reset = 0;
+    ctx->retry_after = 0;
+
+    return ngx_http_ratelimit_send_eval(r);
 }

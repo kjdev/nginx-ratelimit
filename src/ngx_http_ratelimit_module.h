@@ -36,6 +36,9 @@ typedef struct {
     /* flag indicating whether the rate limit has been finalized */
     ngx_flag_t          finalized;
 
+    /* set once EVALSHA hit NOSCRIPT and we fell back to EVAL */
+    ngx_flag_t          eval_fallback;
+
     /* parsed variables from the redis response */
     ngx_uint_t          limit;
     ngx_uint_t          remaining;

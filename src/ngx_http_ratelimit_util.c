@@ -64,77 +64,26 @@ ngx_get_num_size(uint64_t i)
 }
 
 ngx_int_t
-ngx_http_rate_limit_build_command(ngx_http_request_t *r, ngx_buf_t **b)
+ngx_http_ratelimit_build_command(ngx_http_request_t *r, ngx_buf_t **b,
+    ngx_str_t *argv, ngx_uint_t argc)
 {
-    size_t len, arg_len;
+    size_t len;
     u_char *p;
-    ngx_http_rate_limit_ctx_t *ctx;
-    ngx_http_rate_limit_loc_conf_t *rlcf;
+    ngx_uint_t i;
 
-    rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
-
-    ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
-    if (ctx == NULL) {
-        return NGX_ERROR;
-    }
-
-    /* Accumulate buffer size. */
-    len = 0;
-
-    /* Example command:
-     * "*5\r\n$11\r\nRATER.LIMIT\r\n$7\r\nuser123\r\n$2\r\n15\r\n$2\r\n30\r\n$2\r\n60\r\n"
+    /* Encode a RESP array of bulk strings:
+     *   "*<argc>\r\n" then "$<len>\r\n<data>\r\n" for each argument.
      */
 
-    /*The arity of the command */
-    len += sizeof("*6") - 1;
+    len = sizeof("*") - 1;
+    len += ngx_get_num_size(argc);
     len += sizeof("\r\n") - 1;
 
-    /* The length of the first argument in bytes */
-    len += sizeof("$11") - 1;
-    len += sizeof("\r\n") - 1;
-
-    /* Command name */
-    len += sizeof("RATER.LIMIT") - 1;
-    len += sizeof("\r\n") - 1;
-
-    /* <key> */
-    len += sizeof("$") - 1;
-    len += ngx_get_num_size(ctx->key.len);
-    len += sizeof("\r\n") - 1;
-    len += ctx->key.len;
-    len += sizeof("\r\n") - 1;
-
-    /* <max_burst> */
-    arg_len = ngx_get_num_size(rlcf->burst);
-    len += sizeof("$") - 1;
-    len += ngx_get_num_size(arg_len);
-    len += sizeof("\r\n") - 1;
-    len += arg_len;
-    len += sizeof("\r\n") - 1;
-
-    /* <count per period> */
-    arg_len = ngx_get_num_size(rlcf->requests);
-    len += sizeof("$") - 1;
-    len += ngx_get_num_size(arg_len);
-    len += sizeof("\r\n") - 1;
-    len += arg_len;
-    len += sizeof("\r\n") - 1;
-
-    /* <period> */
-    arg_len = ngx_get_num_size(rlcf->period);
-    len += sizeof("$") - 1;
-    len += ngx_get_num_size(arg_len);
-    len += sizeof("\r\n") - 1;
-    len += arg_len;
-    len += sizeof("\r\n") - 1;
-
-    /* [<quantity>] */
-    if (rlcf->quantity != 1) {
-        arg_len = ngx_get_num_size(rlcf->quantity);
+    for (i = 0; i < argc; i++) {
         len += sizeof("$") - 1;
-        len += ngx_get_num_size(arg_len);
+        len += ngx_get_num_size(argv[i].len);
         len += sizeof("\r\n") - 1;
-        len += arg_len;
+        len += argv[i].len;
         len += sizeof("\r\n") - 1;
     }
 
@@ -146,59 +95,18 @@ ngx_http_rate_limit_build_command(ngx_http_request_t *r, ngx_buf_t **b)
     p = (*b)->last;
 
     *p++ = '*';
-    *p++ = rlcf->quantity != 1 ? '6' : '5';
-    *p++ = '\r';
-    *p++ = '\n';
+    p = ngx_sprintf(p, "%ui", argc);
+    *p++ = CR;
+    *p++ = LF;
 
-    *p++ = '$';
-    *p++ = '1';
-    *p++ = '1';
-    *p++ = '\r';
-    *p++ = '\n';
-    p = ngx_cpymem(p, "RATER.LIMIT", sizeof("RATER.LIMIT") - 1);
-    *p++ = '\r';
-    *p++ = '\n';
-
-    *p++ = '$';
-    p = ngx_sprintf(p, "%uz", ctx->key.len);
-    *p++ = '\r';
-    *p++ = '\n';
-    p = ngx_copy(p, ctx->key.data, ctx->key.len);
-    *p++ = '\r';
-    *p++ = '\n';
-
-    *p++ = '$';
-    p = ngx_sprintf(p, "%uz", ngx_get_num_size(rlcf->burst));
-    *p++ = '\r';
-    *p++ = '\n';
-    p = ngx_sprintf(p, "%d", rlcf->burst);
-    *p++ = '\r';
-    *p++ = '\n';
-
-    *p++ = '$';
-    p = ngx_sprintf(p, "%uz", ngx_get_num_size(rlcf->requests));
-    *p++ = '\r';
-    *p++ = '\n';
-    p = ngx_sprintf(p, "%d", rlcf->requests);
-    *p++ = '\r';
-    *p++ = '\n';
-
-    *p++ = '$';
-    p = ngx_sprintf(p, "%uz", ngx_get_num_size(rlcf->period));
-    *p++ = '\r';
-    *p++ = '\n';
-    p = ngx_sprintf(p, "%d", rlcf->period);
-    *p++ = '\r';
-    *p++ = '\n';
-
-    if (rlcf->quantity != 1) {
+    for (i = 0; i < argc; i++) {
         *p++ = '$';
-        p = ngx_sprintf(p, "%uz", ngx_get_num_size(rlcf->quantity));
-        *p++ = '\r';
-        *p++ = '\n';
-        p = ngx_sprintf(p, "%d", rlcf->quantity);
-        *p++ = '\r';
-        *p++ = '\n';
+        p = ngx_sprintf(p, "%uz", argv[i].len);
+        *p++ = CR;
+        *p++ = LF;
+        p = ngx_copy(p, argv[i].data, argv[i].len);
+        *p++ = CR;
+        *p++ = LF;
     }
 
     if (p - (*b)->pos != (ssize_t) len) {

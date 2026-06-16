@@ -1,5 +1,6 @@
 #include "ngx_http_ratelimit_handler.h"
 #include "ngx_http_ratelimit_reply.h"
+#include "ngx_http_ratelimit_script.h"
 #include "ngx_http_ratelimit_upstream.h"
 #include "ngx_http_ratelimit_util.h"
 
@@ -171,8 +172,62 @@ ngx_http_rate_limit_create_request(ngx_http_request_t *r)
     ngx_int_t rc;
     ngx_buf_t *b;
     ngx_chain_t *cl;
+    ngx_http_rate_limit_ctx_t *ctx;
+    ngx_http_rate_limit_loc_conf_t *rlcf;
+    ngx_str_t argv[7];
+    ngx_uint_t limit;
+    u_char *p;
 
-    rc = ngx_http_rate_limit_build_command(r, &b);
+    ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
+    if (ctx == NULL) {
+        return NGX_ERROR;
+    }
+
+    rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
+
+    /* Fixed-window limit: requests plus burst headroom per window. */
+    limit = rlcf->requests + rlcf->burst;
+
+    /* EVALSHA <sha> 1 <key> <limit> <window> <quantity>, falling back to
+     * EVAL <script> 1 <key> ... once the server reports NOSCRIPT. */
+    if (ctx->eval_fallback) {
+        ngx_str_set(&argv[0], "EVAL");
+        argv[1] = *ngx_http_ratelimit_script_body();
+    } else {
+        ngx_str_set(&argv[0], "EVALSHA");
+        argv[1] = *ngx_http_ratelimit_script_sha();
+    }
+
+    ngx_str_set(&argv[2], "1");
+
+    /* KEYS[1] */
+    argv[3] = ctx->key;
+
+    /* ARGV[1] = limit */
+    p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+    if (p == NULL) {
+        return NGX_ERROR;
+    }
+    argv[4].data = p;
+    argv[4].len = ngx_sprintf(p, "%ui", limit) - p;
+
+    /* ARGV[2] = window (seconds) */
+    p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+    if (p == NULL) {
+        return NGX_ERROR;
+    }
+    argv[5].data = p;
+    argv[5].len = ngx_sprintf(p, "%ui", rlcf->period) - p;
+
+    /* ARGV[3] = quantity */
+    p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+    if (p == NULL) {
+        return NGX_ERROR;
+    }
+    argv[6].data = p;
+    argv[6].len = ngx_sprintf(p, "%ui", rlcf->quantity) - p;
+
+    rc = ngx_http_ratelimit_build_command(r, &b, argv, 7);
     if (rc != NGX_OK) {
         return rc;
     }
@@ -214,7 +269,7 @@ ngx_http_rate_limit_process_header(ngx_http_request_t *r)
     ngx_http_upstream_t *u;
     ngx_http_rate_limit_ctx_t *ctx;
     ngx_buf_t *b;
-    u_char chr;
+    u_char chr, *p;
     ngx_str_t buf;
 
     u = r->upstream;
@@ -229,25 +284,66 @@ ngx_http_rate_limit_process_header(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
-    /* the first char is the response header */
+    /* the first char is the response type */
     chr = *b->pos;
 
-    /* we are always expecting a multi bulk reply */
-    if (chr != '*') {
-        buf.data = b->pos;
-        buf.len = b->last - b->pos;
+    /* a multi bulk reply carries the 5-integer contract parsed by reply.c */
+    if (chr == '*') {
+        ++b->pos;
 
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rate limit: redis sent invalid response: \"%V\"", &buf);
+        u->state->status = NGX_HTTP_OK;
 
-        return NGX_HTTP_UPSTREAM_INVALID_HEADER;
+        return NGX_OK;
     }
 
-    ++b->pos;
+    /* an error reply ("-NOSCRIPT ...", "-ERR ...") spans up to CRLF */
+    if (chr == '-') {
 
-    u->state->status = NGX_HTTP_OK;
+        for (p = b->pos + 1; p < b->last; p++) {
+            if (*p == LF) {
+                break;
+            }
+        }
 
-    return NGX_OK;
+        if (p == b->last) {
+            /* the error line has not fully arrived yet */
+            return NGX_AGAIN;
+        }
+
+        /* On NOSCRIPT, load the script with EVAL on this connection once and
+         * resume reading its reply. */
+        if (!ctx->eval_fallback
+            && b->last - b->pos >= (ssize_t) (sizeof("-NOSCRIPT") - 1)
+            && ngx_strncmp(b->pos + 1, "NOSCRIPT", sizeof("NOSCRIPT") - 1)
+            == 0)
+        {
+            if (ngx_http_ratelimit_resend_eval(r) != NGX_OK) {
+                return NGX_ERROR;
+            }
+
+            return NGX_AGAIN;
+        }
+
+        buf.data = b->pos;
+        buf.len = p - b->pos;
+
+        if (buf.len > 0 && buf.data[buf.len - 1] == CR) {
+            buf.len--;
+        }
+
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "rate limit: redis error reply: \"%V\"", &buf);
+
+        return NGX_ERROR;
+    }
+
+    buf.data = b->pos;
+    buf.len = b->last - b->pos;
+
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                  "rate limit: redis sent invalid response: \"%V\"", &buf);
+
+    return NGX_HTTP_UPSTREAM_INVALID_HEADER;
 }
 
 static ngx_int_t
