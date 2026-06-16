@@ -1,9 +1,9 @@
 #include "ngx_http_ratelimit_util.h"
 
-static size_t ngx_get_num_size(uint64_t i);
+static size_t ngx_http_ratelimit_get_num_size(uint64_t i);
 
 ngx_http_upstream_srv_conf_t *
-ngx_http_rate_limit_upstream_add(ngx_http_request_t *r, ngx_url_t *url)
+ngx_http_ratelimit_upstream_add(ngx_http_request_t *r, ngx_url_t *url)
 {
     ngx_http_upstream_main_conf_t *umcf;
     ngx_http_upstream_srv_conf_t **uscfp;
@@ -51,7 +51,7 @@ ngx_http_rate_limit_upstream_add(ngx_http_request_t *r, ngx_url_t *url)
 }
 
 static size_t
-ngx_get_num_size(uint64_t i)
+ngx_http_ratelimit_get_num_size(uint64_t i)
 {
     size_t n = 0;
 
@@ -76,12 +76,12 @@ ngx_http_ratelimit_build_command(ngx_http_request_t *r, ngx_buf_t **b,
      */
 
     len = sizeof("*") - 1;
-    len += ngx_get_num_size(argc);
+    len += ngx_http_ratelimit_get_num_size(argc);
     len += sizeof("\r\n") - 1;
 
     for (i = 0; i < argc; i++) {
         len += sizeof("$") - 1;
-        len += ngx_get_num_size(argv[i].len);
+        len += ngx_http_ratelimit_get_num_size(argv[i].len);
         len += sizeof("\r\n") - 1;
         len += argv[i].len;
         len += sizeof("\r\n") - 1;
@@ -123,7 +123,7 @@ ngx_http_ratelimit_build_command(ngx_http_request_t *r, ngx_buf_t **b,
 }
 
 ngx_int_t
-ngx_set_custom_header(ngx_http_request_t *r, ngx_str_t *key, ngx_uint_t value)
+ngx_http_ratelimit_set_custom_header(ngx_http_request_t *r, ngx_str_t *key, ngx_uint_t value)
 {
     ngx_table_elt_t *h;
 
@@ -136,7 +136,7 @@ ngx_set_custom_header(ngx_http_request_t *r, ngx_str_t *key, ngx_uint_t value)
     h->hash = 1;
     h->key = *key;
 
-    h->value.data = ngx_pnalloc(r->pool, ngx_get_num_size(value));
+    h->value.data = ngx_pnalloc(r->pool, ngx_http_ratelimit_get_num_size(value));
     if (h->value.data == NULL) {
         h->hash = 0;
         return NGX_ERROR;

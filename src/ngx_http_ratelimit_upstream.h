@@ -3,7 +3,7 @@
 
 #include <ngx_http.h>
 
-void ngx_http_rate_limit_rev_handler(ngx_http_request_t *r,
+void ngx_http_ratelimit_rev_handler(ngx_http_request_t *r,
     ngx_http_upstream_t *u);
 
 /* Reload the script with EVAL on the current connection and resume reading

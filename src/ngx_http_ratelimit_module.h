@@ -12,7 +12,7 @@ typedef struct {
     ngx_http_complex_value_t  key;
 
     ngx_http_upstream_conf_t  upstream;
-    ngx_http_complex_value_t *complex_target; /* for rate_limit_pass */
+    ngx_http_complex_value_t *complex_target; /* for ratelimit_pass */
 
     ngx_flag_t                enable_headers;
     ngx_uint_t                status_code;
@@ -23,7 +23,7 @@ typedef struct {
     ngx_uint_t                period;
     ngx_uint_t                burst;
     ngx_uint_t                quantity;
-} ngx_http_rate_limit_loc_conf_t;
+} ngx_http_ratelimit_loc_conf_t;
 
 typedef struct {
     ngx_str_t           key;
@@ -44,6 +44,6 @@ typedef struct {
     ngx_uint_t          remaining;
     ngx_uint_t          reset;
     ngx_int_t           retry_after;
-} ngx_http_rate_limit_ctx_t;
+} ngx_http_ratelimit_ctx_t;
 
 #endif /* NGX_HTTP_RATELIMIT_MODULE_H */

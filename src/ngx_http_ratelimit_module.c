@@ -3,16 +3,16 @@
 #include "ngx_http_ratelimit_script.h"
 #include "ngx_http_ratelimit_util.h"
 
-static ngx_int_t ngx_http_rate_limit_init(ngx_conf_t *cf);
-static void *ngx_http_rate_limit_create_loc_conf(ngx_conf_t *cf);
-static char *ngx_http_rate_limit_merge_loc_conf(ngx_conf_t *cf, void *parent,
+static ngx_int_t ngx_http_ratelimit_init(ngx_conf_t *cf);
+static void *ngx_http_ratelimit_create_loc_conf(ngx_conf_t *cf);
+static char *ngx_http_ratelimit_merge_loc_conf(ngx_conf_t *cf, void *parent,
     void *child);
-static char *ngx_http_rate_limit(ngx_conf_t *cf, ngx_command_t *cmd,
+static char *ngx_http_ratelimit(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
-static char *ngx_http_rate_limit_pass(ngx_conf_t *cf, ngx_command_t *cmd,
+static char *ngx_http_ratelimit_pass(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 
-static ngx_conf_enum_t ngx_http_rate_limit_log_levels[] = {
+static ngx_conf_enum_t ngx_http_ratelimit_log_levels[] = {
     { ngx_string("info"), NGX_LOG_INFO },
     { ngx_string("notice"), NGX_LOG_NOTICE },
     { ngx_string("warn"), NGX_LOG_WARN },
@@ -20,85 +20,85 @@ static ngx_conf_enum_t ngx_http_rate_limit_log_levels[] = {
     { ngx_null_string, 0 }
 };
 
-static ngx_conf_num_bounds_t ngx_http_rate_limit_status_bounds = {
+static ngx_conf_num_bounds_t ngx_http_ratelimit_status_bounds = {
     ngx_conf_check_num_bounds, 400, 599
 };
 
-static ngx_command_t ngx_http_rate_limit_commands[] = {
+static ngx_command_t ngx_http_ratelimit_commands[] = {
 
-    { ngx_string("rate_limit"),
+    { ngx_string("ratelimit"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1234,
-      ngx_http_rate_limit, NGX_HTTP_LOC_CONF_OFFSET, 0, NULL },
+      ngx_http_ratelimit, NGX_HTTP_LOC_CONF_OFFSET, 0, NULL },
 
-    { ngx_string("rate_limit_prefix"),
+    { ngx_string("ratelimit_prefix"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
       ngx_conf_set_str_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, prefix), NULL },
+      offsetof(ngx_http_ratelimit_loc_conf_t, prefix), NULL },
 
-    { ngx_string("rate_limit_quantity"),
+    { ngx_string("ratelimit_quantity"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
       ngx_conf_set_num_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, quantity), NULL },
+      offsetof(ngx_http_ratelimit_loc_conf_t, quantity), NULL },
 
-    { ngx_string("rate_limit_pass"),
+    { ngx_string("ratelimit_pass"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
-      ngx_http_rate_limit_pass, NGX_HTTP_LOC_CONF_OFFSET, 0, NULL },
+      ngx_http_ratelimit_pass, NGX_HTTP_LOC_CONF_OFFSET, 0, NULL },
 
-    { ngx_string("rate_limit_headers"),
+    { ngx_string("ratelimit_headers"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_FLAG,
       ngx_conf_set_flag_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, enable_headers), NULL },
+      offsetof(ngx_http_ratelimit_loc_conf_t, enable_headers), NULL },
 
-    { ngx_string("rate_limit_log_level"),
+    { ngx_string("ratelimit_log_level"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
       ngx_conf_set_enum_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, limit_log_level),
-      &ngx_http_rate_limit_log_levels },
+      offsetof(ngx_http_ratelimit_loc_conf_t, limit_log_level),
+      &ngx_http_ratelimit_log_levels },
 
-    { ngx_string("rate_limit_status"),
+    { ngx_string("ratelimit_status"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
       ngx_conf_set_num_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, status_code),
-      &ngx_http_rate_limit_status_bounds },
+      offsetof(ngx_http_ratelimit_loc_conf_t, status_code),
+      &ngx_http_ratelimit_status_bounds },
 
-    { ngx_string("rate_limit_buffer_size"),
+    { ngx_string("ratelimit_buffer_size"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
       ngx_conf_set_size_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, upstream.buffer_size), NULL },
+      offsetof(ngx_http_ratelimit_loc_conf_t, upstream.buffer_size), NULL },
 
-    { ngx_string("rate_limit_connect_timeout"),
+    { ngx_string("ratelimit_connect_timeout"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
       ngx_conf_set_msec_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, upstream.connect_timeout),
+      offsetof(ngx_http_ratelimit_loc_conf_t, upstream.connect_timeout),
       NULL },
 
-    { ngx_string("rate_limit_send_timeout"),
+    { ngx_string("ratelimit_send_timeout"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
       ngx_conf_set_msec_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, upstream.send_timeout), NULL },
+      offsetof(ngx_http_ratelimit_loc_conf_t, upstream.send_timeout), NULL },
 
-    { ngx_string("rate_limit_read_timeout"),
+    { ngx_string("ratelimit_read_timeout"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
       NGX_CONF_TAKE1,
       ngx_conf_set_msec_slot, NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_rate_limit_loc_conf_t, upstream.read_timeout), NULL },
+      offsetof(ngx_http_ratelimit_loc_conf_t, upstream.read_timeout), NULL },
 
     ngx_null_command
 };
 
-static ngx_http_module_t ngx_http_rate_limit_module_ctx = {
+static ngx_http_module_t ngx_http_ratelimit_module_ctx = {
     NULL,                     /* preconfiguration */
-    ngx_http_rate_limit_init, /* postconfiguration */
+    ngx_http_ratelimit_init, /* postconfiguration */
 
     NULL, /* create main configuration */
     NULL, /* init main configuration */
@@ -106,14 +106,14 @@ static ngx_http_module_t ngx_http_rate_limit_module_ctx = {
     NULL, /* create server configuration */
     NULL, /* merge server configuration */
 
-    ngx_http_rate_limit_create_loc_conf, /* create location configration */
-    ngx_http_rate_limit_merge_loc_conf   /* merge location configration */
+    ngx_http_ratelimit_create_loc_conf, /* create location configration */
+    ngx_http_ratelimit_merge_loc_conf   /* merge location configration */
 };
 
 ngx_module_t ngx_http_ratelimit_module = {
     NGX_MODULE_V1,
-    &ngx_http_rate_limit_module_ctx, /* module context */
-    ngx_http_rate_limit_commands,    /* module directives */
+    &ngx_http_ratelimit_module_ctx, /* module context */
+    ngx_http_ratelimit_commands,    /* module directives */
     NGX_HTTP_MODULE,                 /* module type */
     NULL,                            /* init master */
     NULL,                            /* init module */
@@ -126,11 +126,11 @@ ngx_module_t ngx_http_ratelimit_module = {
 };
 
 static void *
-ngx_http_rate_limit_create_loc_conf(ngx_conf_t *cf)
+ngx_http_ratelimit_create_loc_conf(ngx_conf_t *cf)
 {
-    ngx_http_rate_limit_loc_conf_t *conf;
+    ngx_http_ratelimit_loc_conf_t *conf;
 
-    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_rate_limit_loc_conf_t));
+    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_ratelimit_loc_conf_t));
     if (conf == NULL) {
         return NULL;
     }
@@ -177,10 +177,10 @@ ngx_http_rate_limit_create_loc_conf(ngx_conf_t *cf)
 }
 
 static char *
-ngx_http_rate_limit_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+ngx_http_ratelimit_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    ngx_http_rate_limit_loc_conf_t *prev = parent;
-    ngx_http_rate_limit_loc_conf_t *conf = child;
+    ngx_http_ratelimit_loc_conf_t *prev = parent;
+    ngx_http_ratelimit_loc_conf_t *conf = child;
 
     ngx_conf_merge_msec_value(conf->upstream.connect_timeout,
                               prev->upstream.connect_timeout, 60000);
@@ -212,9 +212,9 @@ ngx_http_rate_limit_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 }
 
 static char *
-ngx_http_rate_limit(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ngx_http_ratelimit(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_rate_limit_loc_conf_t *lrcf = conf;
+    ngx_http_ratelimit_loc_conf_t *lrcf = conf;
 
     ngx_str_t *value, s;
     ngx_int_t requests, period, burst;
@@ -291,9 +291,9 @@ ngx_http_rate_limit(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 static char *
-ngx_http_rate_limit_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ngx_http_ratelimit_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_rate_limit_loc_conf_t *rlcf = conf;
+    ngx_http_ratelimit_loc_conf_t *rlcf = conf;
 
     ngx_str_t *value;
     ngx_uint_t n;
@@ -348,7 +348,7 @@ ngx_http_rate_limit_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 static ngx_int_t
-ngx_http_rate_limit_init(ngx_conf_t *cf)
+ngx_http_ratelimit_init(ngx_conf_t *cf)
 {
     ngx_http_handler_pt *h;
     ngx_http_core_main_conf_t *cmcf;
@@ -360,7 +360,7 @@ ngx_http_rate_limit_init(ngx_conf_t *cf)
         return NGX_ERROR;
     }
 
-    *h = ngx_http_rate_limit_handler;
+    *h = ngx_http_ratelimit_handler;
 
     /* Cache the script SHA1 for EVALSHA before any request runs. */
     ngx_http_ratelimit_script_init();

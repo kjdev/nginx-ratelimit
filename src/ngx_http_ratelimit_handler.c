@@ -4,13 +4,13 @@
 #include "ngx_http_ratelimit_upstream.h"
 #include "ngx_http_ratelimit_util.h"
 
-static ngx_int_t ngx_http_rate_limit_create_request(ngx_http_request_t *r);
-static ngx_int_t ngx_http_rate_limit_reinit_request(ngx_http_request_t *r);
-static ngx_int_t ngx_http_rate_limit_process_header(ngx_http_request_t *r);
-static ngx_int_t ngx_http_rate_limit_filter_init(void *data);
-static ngx_int_t ngx_http_rate_limit_filter(void *data, ssize_t bytes);
-static void ngx_http_rate_limit_abort_request(ngx_http_request_t *r);
-static void ngx_http_rate_limit_finalize_request(ngx_http_request_t *r,
+static ngx_int_t ngx_http_ratelimit_create_request(ngx_http_request_t *r);
+static ngx_int_t ngx_http_ratelimit_reinit_request(ngx_http_request_t *r);
+static ngx_int_t ngx_http_ratelimit_process_header(ngx_http_request_t *r);
+static ngx_int_t ngx_http_ratelimit_filter_init(void *data);
+static ngx_int_t ngx_http_ratelimit_filter(void *data, ssize_t bytes);
+static void ngx_http_ratelimit_abort_request(ngx_http_request_t *r);
+static void ngx_http_ratelimit_finalize_request(ngx_http_request_t *r,
     ngx_int_t rc);
 
 static ngx_str_t x_limit_header = ngx_string("X-RateLimit-Limit");
@@ -19,11 +19,11 @@ static ngx_str_t x_reset_header = ngx_string("X-RateLimit-Reset");
 static ngx_str_t x_retry_after_header = ngx_string("Retry-After");
 
 ngx_int_t
-ngx_http_rate_limit_handler(ngx_http_request_t *r)
+ngx_http_ratelimit_handler(ngx_http_request_t *r)
 {
     ngx_http_upstream_t *u;
-    ngx_http_rate_limit_ctx_t *ctx;
-    ngx_http_rate_limit_loc_conf_t *rlcf;
+    ngx_http_ratelimit_ctx_t *ctx;
+    ngx_http_ratelimit_loc_conf_t *rlcf;
     size_t len;
     u_char *p, *n;
     ngx_uint_t status;
@@ -64,7 +64,7 @@ ngx_http_rate_limit_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_rate_limit_ctx_t));
+    ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_ratelimit_ctx_t));
     if (ctx == NULL) {
         return NGX_ERROR;
     }
@@ -110,7 +110,7 @@ ngx_http_rate_limit_handler(ngx_http_request_t *r)
     u = r->upstream;
 
     if (rlcf->complex_target) {
-        /* Variables used in the rate_limit_pass directive */
+        /* Variables used in the ratelimit_pass directive */
 
         if (ngx_http_complex_value(r, rlcf->complex_target, &target) !=
             NGX_OK)
@@ -120,7 +120,7 @@ ngx_http_rate_limit_handler(ngx_http_request_t *r)
 
         if (target.len == 0) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "handler: empty \"rate_limit_pass\" target");
+                          "handler: empty \"ratelimit_pass\" target");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
@@ -128,7 +128,7 @@ ngx_http_rate_limit_handler(ngx_http_request_t *r)
         url.port = 0;
         url.no_resolve = 1;
 
-        rlcf->upstream.upstream = ngx_http_rate_limit_upstream_add(r, &url);
+        rlcf->upstream.upstream = ngx_http_ratelimit_upstream_add(r, &url);
 
         if (rlcf->upstream.upstream == NULL) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
@@ -143,16 +143,16 @@ ngx_http_rate_limit_handler(ngx_http_request_t *r)
 
     u->conf = &rlcf->upstream;
 
-    u->create_request = ngx_http_rate_limit_create_request;
-    u->reinit_request = ngx_http_rate_limit_reinit_request;
-    u->process_header = ngx_http_rate_limit_process_header;
-    u->abort_request = ngx_http_rate_limit_abort_request;
-    u->finalize_request = ngx_http_rate_limit_finalize_request;
+    u->create_request = ngx_http_ratelimit_create_request;
+    u->reinit_request = ngx_http_ratelimit_reinit_request;
+    u->process_header = ngx_http_ratelimit_process_header;
+    u->abort_request = ngx_http_ratelimit_abort_request;
+    u->finalize_request = ngx_http_ratelimit_finalize_request;
 
     ngx_http_set_ctx(r, ctx, ngx_http_ratelimit_module);
 
-    u->input_filter_init = ngx_http_rate_limit_filter_init;
-    u->input_filter = ngx_http_rate_limit_filter;
+    u->input_filter_init = ngx_http_ratelimit_filter_init;
+    u->input_filter = ngx_http_ratelimit_filter;
     u->input_filter_ctx = ctx;
 
     r->main->count++;
@@ -161,19 +161,19 @@ ngx_http_rate_limit_handler(ngx_http_request_t *r)
     ngx_http_upstream_init(r);
 
     /* Override the read event handler to our own */
-    u->read_event_handler = ngx_http_rate_limit_rev_handler;
+    u->read_event_handler = ngx_http_ratelimit_rev_handler;
 
     return NGX_AGAIN;
 }
 
 static ngx_int_t
-ngx_http_rate_limit_create_request(ngx_http_request_t *r)
+ngx_http_ratelimit_create_request(ngx_http_request_t *r)
 {
     ngx_int_t rc;
     ngx_buf_t *b;
     ngx_chain_t *cl;
-    ngx_http_rate_limit_ctx_t *ctx;
-    ngx_http_rate_limit_loc_conf_t *rlcf;
+    ngx_http_ratelimit_ctx_t *ctx;
+    ngx_http_ratelimit_loc_conf_t *rlcf;
     ngx_str_t argv[7];
     ngx_uint_t limit;
     u_char *p;
@@ -251,23 +251,23 @@ ngx_http_rate_limit_create_request(ngx_http_request_t *r)
 }
 
 static ngx_int_t
-ngx_http_rate_limit_reinit_request(ngx_http_request_t *r)
+ngx_http_ratelimit_reinit_request(ngx_http_request_t *r)
 {
     ngx_http_upstream_t *u;
 
     u = r->upstream;
 
     /* Override the read event handler to our own */
-    u->read_event_handler = ngx_http_rate_limit_rev_handler;
+    u->read_event_handler = ngx_http_ratelimit_rev_handler;
 
     return NGX_OK;
 }
 
 static ngx_int_t
-ngx_http_rate_limit_process_header(ngx_http_request_t *r)
+ngx_http_ratelimit_process_header(ngx_http_request_t *r)
 {
     ngx_http_upstream_t *u;
-    ngx_http_rate_limit_ctx_t *ctx;
+    ngx_http_ratelimit_ctx_t *ctx;
     ngx_buf_t *b;
     u_char chr, *p;
     ngx_str_t buf;
@@ -347,21 +347,21 @@ ngx_http_rate_limit_process_header(ngx_http_request_t *r)
 }
 
 static ngx_int_t
-ngx_http_rate_limit_filter_init(void *data)
+ngx_http_ratelimit_filter_init(void *data)
 {
     return NGX_OK;
 }
 
 static ngx_int_t
-ngx_http_rate_limit_filter(void *data, ssize_t bytes)
+ngx_http_ratelimit_filter(void *data, ssize_t bytes)
 {
-    ngx_http_rate_limit_ctx_t *ctx = data;
+    ngx_http_ratelimit_ctx_t *ctx = data;
 
-    return ngx_http_rate_limit_process_reply(ctx, bytes);
+    return ngx_http_ratelimit_process_reply(ctx, bytes);
 }
 
 static void
-ngx_http_rate_limit_abort_request(ngx_http_request_t *r)
+ngx_http_ratelimit_abort_request(ngx_http_request_t *r)
 {
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "abort http rate limit request");
@@ -369,10 +369,10 @@ ngx_http_rate_limit_abort_request(ngx_http_request_t *r)
 }
 
 static void
-ngx_http_rate_limit_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
+ngx_http_ratelimit_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 {
-    ngx_http_rate_limit_ctx_t *ctx;
-    ngx_http_rate_limit_loc_conf_t *rlcf;
+    ngx_http_ratelimit_ctx_t *ctx;
+    ngx_http_ratelimit_loc_conf_t *rlcf;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "finalize http rate limit request");
@@ -388,17 +388,17 @@ ngx_http_rate_limit_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         || rlcf->enable_headers)
     {
         /* X-RateLimit-Limit HTTP header */
-        (void) ngx_set_custom_header(r, &x_limit_header, ctx->limit);
+        (void) ngx_http_ratelimit_set_custom_header(r, &x_limit_header, ctx->limit);
 
         /* X-RateLimit-Remaining HTTP header */
-        (void) ngx_set_custom_header(r, &x_remaining_header, ctx->remaining);
+        (void) ngx_http_ratelimit_set_custom_header(r, &x_remaining_header, ctx->remaining);
 
         /* X-RateLimit-Reset */
-        (void) ngx_set_custom_header(r, &x_reset_header, ctx->reset);
+        (void) ngx_http_ratelimit_set_custom_header(r, &x_reset_header, ctx->reset);
 
         /* Retry-After (always -1 if the action was allowed) */
         if (ctx->retry_after != -1) {
-            (void) ngx_set_custom_header(r, &x_retry_after_header,
+            (void) ngx_http_ratelimit_set_custom_header(r, &x_retry_after_header,
                                          (ngx_uint_t) ctx->retry_after);
         }
     }

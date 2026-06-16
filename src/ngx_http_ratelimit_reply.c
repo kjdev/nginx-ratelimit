@@ -1,7 +1,7 @@
 #include "ngx_http_ratelimit_reply.h"
 
 ngx_int_t
-ngx_http_rate_limit_process_reply(ngx_http_rate_limit_ctx_t *ctx, ssize_t bytes)
+ngx_http_ratelimit_process_reply(ngx_http_ratelimit_ctx_t *ctx, ssize_t bytes)
 {
     ngx_buf_t *b;
     ngx_http_upstream_t *u;

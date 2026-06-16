@@ -7,7 +7,7 @@ static void ngx_http_ratelimit_send_eval_handler(ngx_http_request_t *r,
 
 /* Reference: ngx_http_upstream_finalize_request */
 void
-ngx_http_rate_limit_finalize_upstream_request(ngx_http_request_t *r,
+ngx_http_ratelimit_finalize_upstream_request(ngx_http_request_t *r,
     ngx_http_upstream_t *u,
     ngx_int_t rc)
 {
@@ -78,7 +78,7 @@ ngx_http_rate_limit_finalize_upstream_request(ngx_http_request_t *r,
 
 /* Reference: ngx_http_upstream_test_connect */
 static ngx_int_t
-ngx_http_rate_limit_test_connect(ngx_connection_t *c)
+ngx_http_ratelimit_test_connect(ngx_connection_t *c)
 {
     int err;
     socklen_t len;
@@ -129,7 +129,7 @@ ngx_http_rate_limit_test_connect(ngx_connection_t *c)
 
 /* Reference: ngx_http_upstream_process_non_buffered_request */
 static void
-ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
+ngx_http_ratelimit_process_redis_response(ngx_http_request_t *r,
     ngx_uint_t do_write)
 {
     size_t size;
@@ -150,7 +150,7 @@ ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
         if (do_write) {
 
             if (u->out_bufs || u->busy_bufs) {
-                ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_DONE);
+                ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_DONE);
             }
 
             if (u->busy_bufs == NULL) {
@@ -158,7 +158,7 @@ ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
                 if (u->length == 0
                     || (upstream->read->eof && u->length == -1))
                 {
-                    ngx_http_rate_limit_finalize_upstream_request(r, u, 0);
+                    ngx_http_ratelimit_finalize_upstream_request(r, u, 0);
                     return;
                 }
 
@@ -166,13 +166,13 @@ ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
                     ngx_log_error(NGX_LOG_ERR, upstream->log, 0,
                                   "redis prematurely closed connection");
 
-                    ngx_http_rate_limit_finalize_upstream_request(
+                    ngx_http_ratelimit_finalize_upstream_request(
                         r, u, NGX_HTTP_BAD_GATEWAY);
                     return;
                 }
 
                 if (upstream->read->error) {
-                    ngx_http_rate_limit_finalize_upstream_request(
+                    ngx_http_ratelimit_finalize_upstream_request(
                         r, u, NGX_HTTP_BAD_GATEWAY);
                     return;
                 }
@@ -197,7 +197,7 @@ ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
                 u->state->response_length += n;
 
                 if (u->input_filter(u->input_filter_ctx, n) == NGX_ERROR) {
-                    ngx_http_rate_limit_finalize_upstream_request(r, u,
+                    ngx_http_ratelimit_finalize_upstream_request(r, u,
                                                                   NGX_ERROR);
                     return;
                 }
@@ -212,7 +212,7 @@ ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
     }
 
     if (ngx_handle_read_event(upstream->read, 0) != NGX_OK) {
-        ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_ERROR);
+        ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
         return;
     }
 
@@ -226,7 +226,7 @@ ngx_http_rate_limit_process_redis_response(ngx_http_request_t *r,
 
 /* Reference: ngx_http_upstream_process_non_buffered_upstream */
 static void
-ngx_http_rate_limit_redis_rev_handler(ngx_http_request_t *r,
+ngx_http_ratelimit_redis_rev_handler(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
     ngx_connection_t *c;
@@ -240,26 +240,26 @@ ngx_http_rate_limit_redis_rev_handler(ngx_http_request_t *r,
 
     if (c->read->timedout) {
         ngx_connection_error(c, NGX_ETIMEDOUT, "redis timed out");
-        ngx_http_rate_limit_finalize_upstream_request(
+        ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_GATEWAY_TIME_OUT);
         return;
     }
 
-    ngx_http_rate_limit_process_redis_response(r, 0);
+    ngx_http_ratelimit_process_redis_response(r, 0);
 }
 
 /* Reference: ngx_http_upstream_dummy_handler */
 static void
-ngx_http_rate_limit_dummy_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
+ngx_http_ratelimit_dummy_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                  "rate_limit: ngx_http_rate_limit_dummy_handler should not"
+                  "ratelimit: ngx_http_ratelimit_dummy_handler should not"
                   " be called by the upstream");
 }
 
 /* Reference: ngx_http_upstream_send_response */
 static void
-ngx_http_rate_limit_process_response(ngx_http_request_t *r,
+ngx_http_ratelimit_process_response(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
     ssize_t n;
@@ -283,23 +283,23 @@ ngx_http_rate_limit_process_response(ngx_http_request_t *r,
         u->input_filter_ctx = r;
        }*/
 
-    u->read_event_handler = ngx_http_rate_limit_redis_rev_handler;
+    u->read_event_handler = ngx_http_ratelimit_redis_rev_handler;
 
     /* Set write_event_handler to the dummy handler
      * to make sure we don't send anything */
-    u->write_event_handler = ngx_http_rate_limit_dummy_handler;
+    u->write_event_handler = ngx_http_ratelimit_dummy_handler;
 
     /* Not needed */
     /*r->limit_rate = 0;
        r->limit_rate_set = 1;*/
 
     if (u->input_filter_init(u->input_filter_ctx) == NGX_ERROR) {
-        ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_ERROR);
+        ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
         return;
     }
 
     if (clcf->tcp_nodelay && ngx_tcp_nodelay(c) != NGX_OK) {
-        ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_ERROR);
+        ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
         return;
     }
 
@@ -311,27 +311,27 @@ ngx_http_rate_limit_process_response(ngx_http_request_t *r,
         u->state->response_length += n;
 
         if (u->input_filter(u->input_filter_ctx, n) == NGX_ERROR) {
-            ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_ERROR);
+            ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
             return;
         }
 
-        ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_DONE);
+        ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_DONE);
     } else {
         u->buffer.pos = u->buffer.start;
         u->buffer.last = u->buffer.start;
 
         if (ngx_http_send_special(r, NGX_HTTP_FLUSH) == NGX_ERROR) {
-            ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_ERROR);
+            ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
             return;
         }
 
-        ngx_http_rate_limit_redis_rev_handler(r, u);
+        ngx_http_ratelimit_redis_rev_handler(r, u);
     }
 }
 
 /* Reference: ngx_http_upstream_process_header */
 void
-ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
+ngx_http_ratelimit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
     ssize_t n;
     ngx_int_t rc;
@@ -346,17 +346,17 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     if (c->read->timedout) {
         /*ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_TIMEOUT);*/
-        ngx_http_rate_limit_finalize_upstream_request(
+        ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_GATEWAY_TIME_OUT);
         return;
     }
 
-    if (!u->request_sent && ngx_http_rate_limit_test_connect(c) != NGX_OK) {
+    if (!u->request_sent && ngx_http_ratelimit_test_connect(c) != NGX_OK) {
         /* Ensure u->reinit_request always gets called for upstream_next */
         /*u->request_sent = 1;
 
            ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);*/
-        ngx_http_rate_limit_finalize_upstream_request(
+        ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_SERVICE_UNAVAILABLE);
         return;
     }
@@ -364,7 +364,7 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
     if (u->buffer.start == NULL) {
         u->buffer.start = ngx_palloc(r->pool, u->conf->buffer_size);
         if (u->buffer.start == NULL) {
-            ngx_http_rate_limit_finalize_upstream_request(
+            ngx_http_ratelimit_finalize_upstream_request(
                 r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
             return;
         }
@@ -385,7 +385,7 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
         if (n == NGX_AGAIN) {
             if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
-                ngx_http_rate_limit_finalize_upstream_request(
+                ngx_http_ratelimit_finalize_upstream_request(
                     r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
                 return;
@@ -401,7 +401,7 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
         if (n == NGX_ERROR || n == 0) {
             /*ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);*/
-            ngx_http_rate_limit_finalize_upstream_request(
+            ngx_http_ratelimit_finalize_upstream_request(
                 r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
             return;
         }
@@ -421,7 +421,7 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
                 /*ngx_http_upstream_next(r, u,
                                        NGX_HTTP_UPSTREAM_FT_INVALID_HEADER);*/
 
-                ngx_http_rate_limit_finalize_upstream_request(
+                ngx_http_ratelimit_finalize_upstream_request(
                     r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
                 return;
             }
@@ -434,13 +434,13 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     if (rc == NGX_HTTP_UPSTREAM_INVALID_HEADER) {
         /*ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_INVALID_HEADER);*/
-        ngx_http_rate_limit_finalize_upstream_request(
+        ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
 
     if (rc == NGX_ERROR) {
-        ngx_http_rate_limit_finalize_upstream_request(
+        ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -451,7 +451,7 @@ ngx_http_rate_limit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     u->length = -1;
 
-    ngx_http_rate_limit_process_response(r, u);
+    ngx_http_ratelimit_process_response(r, u);
 }
 
 /* Write the rebuilt request (EVAL) to the upstream connection. */
@@ -492,7 +492,7 @@ ngx_http_ratelimit_send_eval(ngx_http_request_t *r)
     }
 
     /* Fully sent; we never write again on this request. */
-    u->write_event_handler = ngx_http_rate_limit_dummy_handler;
+    u->write_event_handler = ngx_http_ratelimit_dummy_handler;
 
     return NGX_OK;
 }
@@ -502,7 +502,7 @@ ngx_http_ratelimit_send_eval_handler(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
     if (ngx_http_ratelimit_send_eval(r) != NGX_OK) {
-        ngx_http_rate_limit_finalize_upstream_request(r, u, NGX_ERROR);
+        ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
     }
 }
 
@@ -511,7 +511,7 @@ ngx_http_ratelimit_resend_eval(ngx_http_request_t *r)
 {
     ngx_int_t rc;
     ngx_http_upstream_t *u;
-    ngx_http_rate_limit_ctx_t *ctx;
+    ngx_http_ratelimit_ctx_t *ctx;
 
     u = r->upstream;
 
