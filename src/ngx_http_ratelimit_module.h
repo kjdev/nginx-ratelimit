@@ -14,16 +14,16 @@ typedef enum {
 /* A named rate definition (ratelimit_zone). No shared memory is allocated;
  * the counter lives in Redis. The zone only carries the rate semantics. */
 typedef struct {
-    ngx_str_t                 name;
-    ngx_http_complex_value_t  key;
-    ngx_uint_t                requests; /* limit base per window */
-    ngx_uint_t                period;   /* window length in seconds */
-    ngx_uint_t                burst;    /* default burst headroom */
-    ngx_http_ratelimit_algo_t algo;     /* fixed window for now */
+    ngx_str_t                  name;
+    ngx_http_complex_value_t   key;
+    ngx_uint_t                 requests; /* limit base per window */
+    ngx_uint_t                 period;  /* window length in seconds */
+    ngx_uint_t                 burst;   /* default burst headroom */
+    ngx_http_ratelimit_algo_t  algo;    /* fixed window for now */
 } ngx_http_ratelimit_zone_t;
 
 typedef struct {
-    ngx_array_t               zones; /* of ngx_http_ratelimit_zone_t */
+    ngx_array_t  zones;              /* of ngx_http_ratelimit_zone_t */
 } ngx_http_ratelimit_main_conf_t;
 
 typedef struct {

@@ -198,7 +198,7 @@ ngx_http_ratelimit_process_redis_response(ngx_http_request_t *r,
 
                 if (u->input_filter(u->input_filter_ctx, n) == NGX_ERROR) {
                     ngx_http_ratelimit_finalize_upstream_request(r, u,
-                                                                  NGX_ERROR);
+                                                                 NGX_ERROR);
                     return;
                 }
             }

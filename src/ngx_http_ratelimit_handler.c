@@ -185,7 +185,8 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     if (ctx->prelude_chain != NULL && !u->peer.cached && !u->request_sent) {
         ngx_chain_t *cl;
 
-        for (cl = ctx->prelude_chain; cl->next; cl = cl->next) { /* void */ }
+        for (cl = ctx->prelude_chain; cl->next; cl = cl->next) { /* void */
+        }
 
         cl->next = u->request_bufs;
         u->request_bufs = ctx->prelude_chain;
@@ -446,7 +447,7 @@ ngx_http_ratelimit_process_header(ngx_http_request_t *r)
     }
 
     /* Consume the AUTH/SELECT "+OK" replies that precede the EVALSHA reply on
-     * a freshly opened connection, before reply.c sees the 5-integer array. */
+    * a freshly opened connection, before reply.c sees the 5-integer array. */
     while (ctx->prelude_replies > 0) {
         ngx_int_t prc;
 
@@ -566,18 +567,23 @@ ngx_http_ratelimit_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         || rlcf->enable_headers)
     {
         /* X-RateLimit-Limit HTTP header */
-        (void) ngx_http_ratelimit_set_custom_header(r, &x_limit_header, ctx->limit);
+        (void) ngx_http_ratelimit_set_custom_header(r, &x_limit_header,
+                                                    ctx->limit);
 
         /* X-RateLimit-Remaining HTTP header */
-        (void) ngx_http_ratelimit_set_custom_header(r, &x_remaining_header, ctx->remaining);
+        (void) ngx_http_ratelimit_set_custom_header(r, &x_remaining_header,
+                                                    ctx->remaining);
 
         /* X-RateLimit-Reset */
-        (void) ngx_http_ratelimit_set_custom_header(r, &x_reset_header, ctx->reset);
+        (void) ngx_http_ratelimit_set_custom_header(r, &x_reset_header,
+                                                    ctx->reset);
 
         /* Retry-After (always -1 if the action was allowed) */
         if (ctx->retry_after != -1) {
-            (void) ngx_http_ratelimit_set_custom_header(r, &x_retry_after_header,
-                                         (ngx_uint_t) ctx->retry_after);
+            (void) ngx_http_ratelimit_set_custom_header(r,
+                                                        &x_retry_after_header,
+                                                        (ngx_uint_t) ctx->
+                                                        retry_after);
         }
     }
 

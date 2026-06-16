@@ -123,7 +123,8 @@ ngx_http_ratelimit_build_command(ngx_http_request_t *r, ngx_buf_t **b,
 }
 
 ngx_int_t
-ngx_http_ratelimit_set_custom_header(ngx_http_request_t *r, ngx_str_t *key, ngx_uint_t value)
+ngx_http_ratelimit_set_custom_header(ngx_http_request_t *r, ngx_str_t *key,
+    ngx_uint_t value)
 {
     ngx_table_elt_t *h;
 
@@ -136,7 +137,8 @@ ngx_http_ratelimit_set_custom_header(ngx_http_request_t *r, ngx_str_t *key, ngx_
     h->hash = 1;
     h->key = *key;
 
-    h->value.data = ngx_pnalloc(r->pool, ngx_http_ratelimit_get_num_size(value));
+    h->value.data = ngx_pnalloc(r->pool,
+                                ngx_http_ratelimit_get_num_size(value));
     if (h->value.data == NULL) {
         h->hash = 0;
         return NGX_ERROR;
