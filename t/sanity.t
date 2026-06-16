@@ -16,6 +16,9 @@ our $HttpConfig = qq{
        keepalive 1024;
     }
 
+    ratelimit_zone quota key=\$remote_addr requests=700 period=3m;
+    ratelimit_zone hit key=\$remote_addr requests=4 period=5s;
+
     error_log logs/error.log debug;
 };
 
@@ -30,10 +33,9 @@ __DATA__
 --- http_config eval: $::HttpConfig
 --- config
     location /quota {
-        rate_limit $remote_addr requests=700 period=3m;
-        rate_limit_quantity 0;
-        rate_limit_pass redis;
-        rate_limit_headers on;
+        ratelimit zone=quota quantity=0;
+        ratelimit_pass redis;
+        ratelimit_headers on;
 
         error_page 404 =200 @quota;
     }
@@ -55,10 +57,10 @@ X-RateLimit-Reset: 0
 --- http_config eval: $::HttpConfig
 --- config
     location /hit {
-        rate_limit $remote_addr requests=4 period=5s;
-        rate_limit_prefix a;
-        rate_limit_pass redis;
-        rate_limit_headers on;
+        ratelimit zone=hit;
+        ratelimit_prefix a;
+        ratelimit_pass redis;
+        ratelimit_headers on;
 
         error_page 404 =200 @hit;
     }
@@ -80,11 +82,10 @@ X-RateLimit-Reset: 0
 --- http_config eval: $::HttpConfig
 --- config
     location /hit {
-        rate_limit $remote_addr requests=4 period=5s;
-        rate_limit_prefix b;
-        rate_limit_quantity 5;
-        rate_limit_pass redis;
-        rate_limit_headers on;
+        ratelimit zone=hit quantity=5;
+        ratelimit_prefix b;
+        ratelimit_pass redis;
+        ratelimit_headers on;
 
         error_page 404 =200 @hit;
     }
