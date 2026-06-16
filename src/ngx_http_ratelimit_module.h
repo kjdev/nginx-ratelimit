@@ -8,7 +8,9 @@
 extern ngx_module_t ngx_http_ratelimit_module;
 
 typedef enum {
-    NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW = 0
+    NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW = 0,
+    NGX_HTTP_RATELIMIT_ALGO_TOKEN_BUCKET,
+    NGX_HTTP_RATELIMIT_ALGO_GCRA
 } ngx_http_ratelimit_algo_t;
 
 /* A named rate definition (ratelimit_zone). No shared memory is allocated;
@@ -19,7 +21,7 @@ typedef struct {
     ngx_uint_t                 requests; /* limit base per window */
     ngx_uint_t                 period;  /* window length in seconds */
     ngx_uint_t                 burst;   /* default burst headroom */
-    ngx_http_ratelimit_algo_t  algo;    /* fixed window for now */
+    ngx_http_ratelimit_algo_t  algo;    /* fixed window / token bucket / gcra */
 } ngx_http_ratelimit_zone_t;
 
 typedef struct {

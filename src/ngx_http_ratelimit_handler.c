@@ -207,8 +207,9 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
     ngx_chain_t *cl;
     ngx_http_ratelimit_ctx_t *ctx;
     ngx_http_ratelimit_loc_conf_t *rlcf;
-    ngx_str_t argv[7];
-    ngx_uint_t limit, burst;
+    ngx_http_ratelimit_algo_t algo;
+    ngx_str_t argv[8];
+    ngx_uint_t burst, argc;
     u_char *p;
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
@@ -218,21 +219,21 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
 
     rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
 
+    algo = rlcf->zone->algo;
+
     /* A per-location burst overrides the zone default. */
     burst = (rlcf->burst == NGX_CONF_UNSET)
             ? rlcf->zone->burst : (ngx_uint_t) rlcf->burst;
 
-    /* Fixed-window limit: requests plus burst headroom per window. */
-    limit = rlcf->zone->requests + burst;
-
-    /* EVALSHA <sha> 1 <key> <limit> <window> <quantity>, falling back to
-     * EVAL <script> 1 <key> ... once the server reports NOSCRIPT. */
+    /* EVALSHA <sha> 1 <key> <args...>, falling back to EVAL <script> 1 <key>
+     * ... once the server reports NOSCRIPT. The script is selected per zone
+     * algorithm. */
     if (ctx->eval_fallback) {
         ngx_str_set(&argv[0], "EVAL");
-        argv[1] = *ngx_http_ratelimit_script_body();
+        argv[1] = *ngx_http_ratelimit_script_body(algo);
     } else {
         ngx_str_set(&argv[0], "EVALSHA");
-        argv[1] = *ngx_http_ratelimit_script_sha();
+        argv[1] = *ngx_http_ratelimit_script_sha(algo);
     }
 
     ngx_str_set(&argv[2], "1");
@@ -240,31 +241,69 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
     /* KEYS[1] */
     argv[3] = ctx->key;
 
-    /* ARGV[1] = limit */
-    p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-    if (p == NULL) {
-        return NGX_ERROR;
-    }
-    argv[4].data = p;
-    argv[4].len = ngx_sprintf(p, "%ui", limit) - p;
+    if (algo == NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW) {
 
-    /* ARGV[2] = window (seconds) */
-    p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-    if (p == NULL) {
-        return NGX_ERROR;
-    }
-    argv[5].data = p;
-    argv[5].len = ngx_sprintf(p, "%ui", rlcf->zone->period) - p;
+        /* ARGV: <limit> <window> <quantity>; limit is requests plus burst
+         * headroom over the window. */
+        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+        argv[4].data = p;
+        argv[4].len = ngx_sprintf(p, "%ui", rlcf->zone->requests + burst) - p;
 
-    /* ARGV[3] = quantity */
-    p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-    if (p == NULL) {
-        return NGX_ERROR;
-    }
-    argv[6].data = p;
-    argv[6].len = ngx_sprintf(p, "%ui", rlcf->quantity) - p;
+        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+        argv[5].data = p;
+        argv[5].len = ngx_sprintf(p, "%ui", rlcf->zone->period) - p;
 
-    rc = ngx_http_ratelimit_build_command(r, &b, argv, 7);
+        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+        argv[6].data = p;
+        argv[6].len = ngx_sprintf(p, "%ui", rlcf->quantity) - p;
+
+        argc = 7;
+
+    } else {
+
+        /* Token bucket / GCRA share ARGV: <requests> <period> <burst>
+         * <quantity>. The script derives rate and capacity from them. */
+        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+        argv[4].data = p;
+        argv[4].len = ngx_sprintf(p, "%ui", rlcf->zone->requests) - p;
+
+        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+        argv[5].data = p;
+        argv[5].len = ngx_sprintf(p, "%ui", rlcf->zone->period) - p;
+
+        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+        argv[6].data = p;
+        argv[6].len = ngx_sprintf(p, "%ui", burst) - p;
+
+        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+        if (p == NULL) {
+            return NGX_ERROR;
+        }
+        argv[7].data = p;
+        argv[7].len = ngx_sprintf(p, "%ui", rlcf->quantity) - p;
+
+        argc = 8;
+    }
+
+    rc = ngx_http_ratelimit_build_command(r, &b, argv, argc);
     if (rc != NGX_OK) {
         return rc;
     }

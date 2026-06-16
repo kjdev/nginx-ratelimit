@@ -453,6 +453,35 @@ ngx_http_ratelimit_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        if (ngx_strncmp(value[i].data, "algo=", 5) == 0) {
+
+            s.len = value[i].len - 5;
+            s.data = value[i].data + 5;
+
+            if (s.len == sizeof("fixed_window") - 1
+                && ngx_strncmp(s.data, "fixed_window", s.len) == 0)
+            {
+                zone->algo = NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW;
+
+            } else if (s.len == sizeof("token_bucket") - 1
+                       && ngx_strncmp(s.data, "token_bucket", s.len) == 0)
+            {
+                zone->algo = NGX_HTTP_RATELIMIT_ALGO_TOKEN_BUCKET;
+
+            } else if (s.len == sizeof("gcra") - 1
+                       && ngx_strncmp(s.data, "gcra", s.len) == 0)
+            {
+                zone->algo = NGX_HTTP_RATELIMIT_ALGO_GCRA;
+
+            } else {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid algo \"%V\"", &value[i]);
+                return NGX_CONF_ERROR;
+            }
+
+            continue;
+        }
+
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid parameter \"%V\"",
                            &value[i]);
         return NGX_CONF_ERROR;
