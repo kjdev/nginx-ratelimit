@@ -31,7 +31,7 @@ static ngx_str_t ngx_http_ratelimit_fixed_window_lua = ngx_string(
     "  local remaining = limit - current\n"
     "  if remaining < 0 then remaining = 0 end\n"
     "  local status = 0\n"
-    "  if current > limit then status = 1 end\n"
+    "  if current >= limit then status = 1 end\n"
     "  return {status, limit, remaining, -1, ttl}\n"
     "end\n"
     "if current + quantity > limit then\n"
