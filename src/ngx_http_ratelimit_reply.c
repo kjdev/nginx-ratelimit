@@ -198,10 +198,17 @@ ngx_http_ratelimit_process_reply(ngx_http_ratelimit_ctx_t *ctx, ssize_t bytes)
                 return NGX_ERROR;
             }
 
-            /* retry_after is only ever accumulated as a non-negative value
-             * here; the -1 allowed sentinel is set in sw_ALLOWED. Aliasing
-             * the signed field through ngx_uint_t * is well-defined (same
-             * rank, signed/unsigned variant). */
+            /* retry_after enters parsing pre-set to the -1 allowed sentinel,
+             * so clear it to 0 before accumulating the first digit. Skipping
+             * this would accumulate onto (ngx_uint_t) -1 (NGX_MAX_UINT), which
+             * trips the accum_digit overflow guard and fails the reply. The
+             * -1 sentinel is otherwise kept (allowed path sets it in
+             * sw_ALLOWED). Aliasing the signed field through ngx_uint_t * is
+             * well-defined (same rank, signed/unsigned variant). */
+            if (ctx->retry_after < 0) {
+                ctx->retry_after = 0;
+            }
+
             if (ngx_http_ratelimit_accum_digit(
                     (ngx_uint_t *) &ctx->retry_after, ch) != NGX_OK)
             {
