@@ -56,7 +56,8 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
 
         if (status == NGX_HTTP_TOO_MANY_REQUESTS) {
             ngx_log_error(rlcf->limit_log_level, r->connection->log, 0,
-                          "rate limit exceeded for key \"%V\"", &ctx->key);
+                          "rate limit exceeded for zone \"%V\"",
+                          &rlcf->zone->name);
 
             return rlcf->status_code;
         }
@@ -111,10 +112,10 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
 
     if (ctx->key.len > NGX_HTTP_RATELIMIT_MAX_KEY_LEN) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "the value of the \"%V\" key "
-                      "is more than %d bytes: \"%V\"",
-                      &rlcf->zone->key.value,
-                      NGX_HTTP_RATELIMIT_MAX_KEY_LEN, &ctx->key);
+                      "ratelimit zone \"%V\" key is %uz bytes, "
+                      "more than the %d byte limit",
+                      &rlcf->zone->name, ctx->key.len,
+                      NGX_HTTP_RATELIMIT_MAX_KEY_LEN);
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
