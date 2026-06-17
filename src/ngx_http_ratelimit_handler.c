@@ -186,7 +186,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     ngx_http_upstream_init(r);
 
     /* Override the read event handler to our own */
-    u->read_event_handler = ngx_http_ratelimit_rev_handler;
+    u->read_event_handler = ngx_http_ratelimit_read_header_handler;
 
     /* AUTH/SELECT is sent only on a freshly opened connection. A reused
      * keepalive connection (peer.cached) is already authenticated, so the
@@ -479,7 +479,7 @@ ngx_http_ratelimit_reinit_request(ngx_http_request_t *r)
     u = r->upstream;
 
     /* Override the read event handler to our own */
-    u->read_event_handler = ngx_http_ratelimit_rev_handler;
+    u->read_event_handler = ngx_http_ratelimit_read_header_handler;
 
     return NGX_OK;
 }

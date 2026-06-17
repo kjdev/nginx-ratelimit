@@ -246,7 +246,7 @@ ngx_http_ratelimit_process_redis_response(ngx_http_request_t *r,
 
 /* Reference: ngx_http_upstream_process_non_buffered_upstream */
 static void
-ngx_http_ratelimit_redis_rev_handler(ngx_http_request_t *r,
+ngx_http_ratelimit_read_body_handler(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
     ngx_connection_t *c;
@@ -296,7 +296,7 @@ ngx_http_ratelimit_process_response(ngx_http_request_t *r,
      * non-buffered and the input filter is installed by create_request, so
      * the buffering and default-filter fallbacks are omitted.
      */
-    u->read_event_handler = ngx_http_ratelimit_redis_rev_handler;
+    u->read_event_handler = ngx_http_ratelimit_read_body_handler;
 
     /* The dummy write handler guarantees we never send to the client. */
     u->write_event_handler = ngx_http_ratelimit_dummy_handler;
@@ -333,13 +333,14 @@ ngx_http_ratelimit_process_response(ngx_http_request_t *r,
             return;
         }
 
-        ngx_http_ratelimit_redis_rev_handler(r, u);
+        ngx_http_ratelimit_read_body_handler(r, u);
     }
 }
 
 /* Reference: ngx_http_upstream_process_header */
 void
-ngx_http_ratelimit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
+ngx_http_ratelimit_read_header_handler(ngx_http_request_t *r,
+    ngx_http_upstream_t *u)
 {
     ssize_t n;
     ngx_int_t rc;
