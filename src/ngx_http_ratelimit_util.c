@@ -111,7 +111,7 @@ ngx_http_ratelimit_build_command(ngx_http_request_t *r, ngx_buf_t **b,
 
     if (p - (*b)->pos != (ssize_t) len) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rate limit: buffer error %uz != %uz",
+                      "ratelimit: buffer error %uz != %uz",
                       (size_t) (p - (*b)->pos), len);
 
         return NGX_ERROR;

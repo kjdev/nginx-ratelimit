@@ -7,6 +7,10 @@
 
 extern ngx_module_t ngx_http_ratelimit_module;
 
+/* Upper bound on the rate key length; a RESP bulk string argument fits in a
+ * 16-bit length here, keeping the request frame small. */
+#define NGX_HTTP_RATELIMIT_MAX_KEY_LEN  65535
+
 typedef enum {
     NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW = 0,
     NGX_HTTP_RATELIMIT_ALGO_TOKEN_BUCKET,

@@ -4,6 +4,8 @@
 #include "ngx_http_ratelimit_upstream.h"
 #include "ngx_http_ratelimit_util.h"
 
+static ngx_int_t ngx_http_ratelimit_set_uint_arg(ngx_http_request_t *r,
+    ngx_str_t *arg, ngx_uint_t value);
 static ngx_int_t ngx_http_ratelimit_create_request(ngx_http_request_t *r);
 static ngx_int_t ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
     ngx_http_ratelimit_ctx_t *ctx);
@@ -106,11 +108,12 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
         ctx->key.data = n;
     }
 
-    if (ctx->key.len > 65535) {
+    if (ctx->key.len > NGX_HTTP_RATELIMIT_MAX_KEY_LEN) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "the value of the \"%V\" key "
-                      "is more than 65535 bytes: \"%V\"",
-                      &rlcf->zone->key.value, &ctx->key);
+                      "is more than %d bytes: \"%V\"",
+                      &rlcf->zone->key.value,
+                      NGX_HTTP_RATELIMIT_MAX_KEY_LEN, &ctx->key);
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -140,7 +143,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
 
         if (target.len == 0) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "handler: empty \"ratelimit_pass\" target");
+                          "ratelimit: empty \"ratelimit_pass\" target");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
@@ -152,7 +155,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
 
         if (rlcf->upstream.upstream == NULL) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "rate limit: upstream \"%V\" not found", &target);
+                          "ratelimit: upstream \"%V\" not found", &target);
 
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -206,6 +209,25 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     return NGX_AGAIN;
 }
 
+/* Format an unsigned value into a fresh request-pool buffer and point arg at
+ * it. Collapses the repeated ngx_pnalloc + ngx_sprintf idiom for ARGV. */
+static ngx_int_t
+ngx_http_ratelimit_set_uint_arg(ngx_http_request_t *r, ngx_str_t *arg,
+    ngx_uint_t value)
+{
+    u_char *p;
+
+    p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
+    if (p == NULL) {
+        return NGX_ERROR;
+    }
+
+    arg->data = p;
+    arg->len = ngx_sprintf(p, "%ui", value) - p;
+
+    return NGX_OK;
+}
+
 static ngx_int_t
 ngx_http_ratelimit_create_request(ngx_http_request_t *r)
 {
@@ -217,7 +239,6 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
     ngx_http_ratelimit_algo_t algo;
     ngx_str_t argv[8];
     ngx_uint_t burst, argc;
-    u_char *p;
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
     if (ctx == NULL) {
@@ -252,26 +273,16 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
 
         /* ARGV: <limit> <window> <quantity>; limit is requests plus burst
          * headroom over the window. */
-        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-        if (p == NULL) {
+        if (ngx_http_ratelimit_set_uint_arg(r, &argv[4],
+                                            rlcf->zone->requests + burst)
+            != NGX_OK
+            || ngx_http_ratelimit_set_uint_arg(r, &argv[5], rlcf->zone->period)
+            != NGX_OK
+            || ngx_http_ratelimit_set_uint_arg(r, &argv[6], rlcf->quantity)
+            != NGX_OK)
+        {
             return NGX_ERROR;
         }
-        argv[4].data = p;
-        argv[4].len = ngx_sprintf(p, "%ui", rlcf->zone->requests + burst) - p;
-
-        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-        if (p == NULL) {
-            return NGX_ERROR;
-        }
-        argv[5].data = p;
-        argv[5].len = ngx_sprintf(p, "%ui", rlcf->zone->period) - p;
-
-        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-        if (p == NULL) {
-            return NGX_ERROR;
-        }
-        argv[6].data = p;
-        argv[6].len = ngx_sprintf(p, "%ui", rlcf->quantity) - p;
 
         argc = 7;
 
@@ -279,33 +290,17 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
 
         /* Token bucket / GCRA share ARGV: <requests> <period> <burst>
          * <quantity>. The script derives rate and capacity from them. */
-        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-        if (p == NULL) {
+        if (ngx_http_ratelimit_set_uint_arg(r, &argv[4], rlcf->zone->requests)
+            != NGX_OK
+            || ngx_http_ratelimit_set_uint_arg(r, &argv[5], rlcf->zone->period)
+            != NGX_OK
+            || ngx_http_ratelimit_set_uint_arg(r, &argv[6], burst)
+            != NGX_OK
+            || ngx_http_ratelimit_set_uint_arg(r, &argv[7], rlcf->quantity)
+            != NGX_OK)
+        {
             return NGX_ERROR;
         }
-        argv[4].data = p;
-        argv[4].len = ngx_sprintf(p, "%ui", rlcf->zone->requests) - p;
-
-        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-        if (p == NULL) {
-            return NGX_ERROR;
-        }
-        argv[5].data = p;
-        argv[5].len = ngx_sprintf(p, "%ui", rlcf->zone->period) - p;
-
-        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-        if (p == NULL) {
-            return NGX_ERROR;
-        }
-        argv[6].data = p;
-        argv[6].len = ngx_sprintf(p, "%ui", burst) - p;
-
-        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-        if (p == NULL) {
-            return NGX_ERROR;
-        }
-        argv[7].data = p;
-        argv[7].len = ngx_sprintf(p, "%ui", rlcf->quantity) - p;
 
         argc = 8;
     }
@@ -376,7 +371,6 @@ ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
     ngx_chain_t *head, **ll;
     ngx_str_t argv[2];
     ngx_uint_t count;
-    u_char *p;
 
     rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
 
@@ -400,12 +394,13 @@ ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
     if (rlcf->database > 0) {
         ngx_str_set(&argv[0], "SELECT");
 
-        p = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
-        if (p == NULL) {
+        /* database > 0 here, so the unsigned formatting is exact. */
+        if (ngx_http_ratelimit_set_uint_arg(r, &argv[1],
+                                            (ngx_uint_t) rlcf->database)
+            != NGX_OK)
+        {
             return NGX_ERROR;
         }
-        argv[1].data = p;
-        argv[1].len = ngx_sprintf(p, "%i", rlcf->database) - p;
 
         if (ngx_http_ratelimit_append_command(r, &ll, argv, 2, NULL)
             != NGX_OK)
@@ -558,7 +553,7 @@ ngx_http_ratelimit_process_header(ngx_http_request_t *r)
         }
 
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rate limit: redis error reply: \"%V\"", &buf);
+                      "ratelimit: redis error reply: \"%V\"", &buf);
 
         return NGX_ERROR;
     }
@@ -567,7 +562,7 @@ ngx_http_ratelimit_process_header(ngx_http_request_t *r)
     buf.len = b->last - b->pos;
 
     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                  "rate limit: redis sent invalid response: \"%V\"", &buf);
+                  "ratelimit: redis sent invalid response: \"%V\"", &buf);
 
     return NGX_HTTP_UPSTREAM_INVALID_HEADER;
 }

@@ -520,13 +520,13 @@ ngx_http_ratelimit_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static char *
 ngx_http_ratelimit(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_ratelimit_loc_conf_t *lrcf = conf;
+    ngx_http_ratelimit_loc_conf_t *rlcf = conf;
 
     ngx_str_t *value;
     ngx_int_t burst, quantity;
     ngx_uint_t i;
 
-    if (lrcf->zone_name.len) {
+    if (rlcf->zone_name.len) {
         return "is duplicate";
     }
 
@@ -536,10 +536,10 @@ ngx_http_ratelimit(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         if (ngx_strncmp(value[i].data, "zone=", 5) == 0) {
 
-            lrcf->zone_name.len = value[i].len - 5;
-            lrcf->zone_name.data = value[i].data + 5;
+            rlcf->zone_name.len = value[i].len - 5;
+            rlcf->zone_name.data = value[i].data + 5;
 
-            if (lrcf->zone_name.len == 0) {
+            if (rlcf->zone_name.len == 0) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                    "invalid zone name \"%V\"", &value[i]);
                 return NGX_CONF_ERROR;
@@ -557,7 +557,7 @@ ngx_http_ratelimit(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 return NGX_CONF_ERROR;
             }
 
-            lrcf->burst = burst;
+            rlcf->burst = burst;
             continue;
         }
 
@@ -570,7 +570,7 @@ ngx_http_ratelimit(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 return NGX_CONF_ERROR;
             }
 
-            lrcf->quantity = quantity;
+            rlcf->quantity = quantity;
             continue;
         }
 
@@ -579,7 +579,7 @@ ngx_http_ratelimit(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    if (lrcf->zone_name.len == 0) {
+    if (rlcf->zone_name.len == 0) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "\"ratelimit\" requires \"zone=\"");
         return NGX_CONF_ERROR;
