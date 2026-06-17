@@ -286,32 +286,20 @@ ngx_http_ratelimit_process_response(ngx_http_request_t *r,
     ngx_connection_t *c;
     ngx_http_core_loc_conf_t *clcf;
 
-    /* Not necessary, we don't send anything to the client */
-    /*u->header_sent = 1;*/
-
     c = r->connection;
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
-    /* We are always processing a non buffered response */
-    /*if (!u->buffering) {*/
-
-    /* Input filter is always set */
-    /*if (u->input_filter == NULL) {
-        u->input_filter_init = ngx_http_upstream_non_buffered_filter_init;
-        u->input_filter = ngx_http_upstream_non_buffered_filter;
-        u->input_filter_ctx = r;
-       }*/
-
+    /*
+     * Unlike the upstream original, we never set u->header_sent or touch
+     * r->limit_rate: nothing is sent to the client. The response is always
+     * non-buffered and the input filter is installed by create_request, so
+     * the buffering and default-filter fallbacks are omitted.
+     */
     u->read_event_handler = ngx_http_ratelimit_redis_rev_handler;
 
-    /* Set write_event_handler to the dummy handler
-     * to make sure we don't send anything */
+    /* The dummy write handler guarantees we never send to the client. */
     u->write_event_handler = ngx_http_ratelimit_dummy_handler;
-
-    /* Not needed */
-    /*r->limit_rate = 0;
-       r->limit_rate_set = 1;*/
 
     if (u->input_filter_init(u->input_filter_ctx) == NGX_ERROR) {
         ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
@@ -364,18 +352,20 @@ ngx_http_ratelimit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     c->log->action = "reading response header from redis";
 
+    /*
+     * The upstream original retries the next peer via ngx_http_upstream_next
+     * on timeout, connect failure, read error, or an invalid header. This
+     * module talks to a single Redis peer with no failover, so every such
+     * case finalizes the request directly with the mapped status.
+     */
+
     if (c->read->timedout) {
-        /*ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_TIMEOUT);*/
         ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_GATEWAY_TIME_OUT);
         return;
     }
 
     if (!u->request_sent && ngx_http_ratelimit_test_connect(c) != NGX_OK) {
-        /* Ensure u->reinit_request always gets called for upstream_next */
-        /*u->request_sent = 1;
-
-           ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);*/
         ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_SERVICE_UNAVAILABLE);
         return;
@@ -420,7 +410,6 @@ ngx_http_ratelimit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
         }
 
         if (n == NGX_ERROR || n == 0) {
-            /*ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);*/
             ngx_http_ratelimit_finalize_upstream_request(
                 r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
             return;
@@ -438,9 +427,6 @@ ngx_http_ratelimit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
                 ngx_log_error(NGX_LOG_ERR, c->log, 0,
                               "redis sent too big header");
 
-                /*ngx_http_upstream_next(r, u,
-                                       NGX_HTTP_UPSTREAM_FT_INVALID_HEADER);*/
-
                 ngx_http_ratelimit_finalize_upstream_request(
                     r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
                 return;
@@ -453,7 +439,6 @@ ngx_http_ratelimit_rev_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
     }
 
     if (rc == NGX_HTTP_UPSTREAM_INVALID_HEADER) {
-        /*ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_INVALID_HEADER);*/
         ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
