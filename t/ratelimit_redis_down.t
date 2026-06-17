@@ -2,8 +2,7 @@
 
 # When Redis is unreachable the limiter fails closed: the request is rejected
 # with a 5xx rather than silently allowed. The upstream points at a dead port
-# so the connect is refused. (A "header already sent" alert from the upstream
-# finalize path is a known, harmless issue tracked in issues/001.)
+# so the connect is refused.
 
 use Test::Nginx::Socket 'no_plan';
 
