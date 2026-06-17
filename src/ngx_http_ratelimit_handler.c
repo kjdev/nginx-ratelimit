@@ -18,6 +18,7 @@ static ngx_int_t ngx_http_ratelimit_filter(void *data, ssize_t bytes);
 static void ngx_http_ratelimit_abort_request(ngx_http_request_t *r);
 static void ngx_http_ratelimit_finalize_request(ngx_http_request_t *r,
     ngx_int_t rc);
+static void ngx_http_ratelimit_wipe_auth(void *data);
 
 static ngx_str_t x_limit_header = ngx_string("X-RateLimit-Limit");
 static ngx_str_t x_remaining_header = ngx_string("X-RateLimit-Remaining");
@@ -369,6 +370,7 @@ ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
 {
     ngx_http_ratelimit_loc_conf_t *rlcf;
     ngx_chain_t *head, **ll;
+    ngx_pool_cleanup_t *cln;
     ngx_str_t argv[2];
     ngx_uint_t count;
 
@@ -387,6 +389,17 @@ ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
         {
             return NGX_ERROR;
         }
+
+        /* Wipe the password unconditionally when the pool is destroyed. The
+         * prompt wipe in finalize_request covers the normal path, but early
+         * errors before upstream init return without registering the ctx (and
+         * thus without finalize running); this cleanup is the backstop. */
+        cln = ngx_pool_cleanup_add(r->pool, 0);
+        if (cln == NULL) {
+            return NGX_ERROR;
+        }
+        cln->handler = ngx_http_ratelimit_wipe_auth;
+        cln->data = ctx->auth_buf;
 
         count++;
     }
@@ -638,4 +651,15 @@ ngx_http_ratelimit_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
     }
 
     ctx->finalized = 1;
+}
+
+/* Pool cleanup backstop: zero the AUTH password buffer regardless of whether
+ * the request reached finalize_request (early-error paths skip it). Idempotent
+ * with the wipe in finalize_request; a re-zeroed buffer stays zeroed. */
+static void
+ngx_http_ratelimit_wipe_auth(void *data)
+{
+    ngx_buf_t *b = data;
+
+    ngx_memzero(b->start, b->end - b->start);
 }
