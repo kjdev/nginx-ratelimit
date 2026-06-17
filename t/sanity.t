@@ -103,4 +103,4 @@ X-RateLimit-Reset: 5
 Retry-After: 5
 --- response_body_like: 429 Too Many Requests
 --- error_code: 429
---- error_log: rate limit exceeded for key "b_127.0.0.1"
+--- error_log: rate limit exceeded for zone "hit"
