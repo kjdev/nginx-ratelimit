@@ -43,6 +43,17 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
 
+    /* Defense in depth: merge_loc_conf rejects an active zone without a target
+     * at config load, so this should be unreachable. Guard it anyway because
+     * the alternative is a NULL upstream dereference (worker SIGSEGV) further
+     * down rather than a clean failed request. */
+    if (rlcf->complex_target == NULL && rlcf->upstream.upstream == NULL) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "ratelimit zone \"%V\" has no \"ratelimit_pass\" target",
+                      &rlcf->zone->name);
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
     ctx = ngx_http_get_module_ctx(r, ngx_http_ratelimit_module);
 
     if (ctx != NULL) {

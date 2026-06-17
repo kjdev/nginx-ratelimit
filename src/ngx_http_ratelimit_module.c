@@ -276,6 +276,28 @@ ngx_http_ratelimit_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         conf->upstream.upstream = prev->upstream.upstream;
     }
 
+    /* Inherit the variable target alongside upstream.upstream so a parent
+     * "ratelimit_pass $var" still applies to a child that only adds
+     * "ratelimit zone=". Without this, the zone check below would misfire on
+     * such an inherited target. */
+    if (conf->complex_target == NULL) {
+        conf->complex_target = prev->complex_target;
+    }
+
+    /* An active zone needs a resolved redis target: either a static
+     * "ratelimit_pass <name>" (upstream.upstream) or a variable target
+     * (complex_target). Without one the PREACCESS handler would dereference a
+     * NULL upstream at request time, so reject the config at load instead. */
+    if (conf->zone != NULL
+        && conf->upstream.upstream == NULL
+        && conf->complex_target == NULL)
+    {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit zone \"%V\" requires \"ratelimit_pass\"",
+                           &conf->zone_name);
+        return NGX_CONF_ERROR;
+    }
+
     ngx_conf_merge_value(conf->enable_headers, prev->enable_headers, 0);
     ngx_conf_merge_uint_value(conf->status_code, prev->status_code,
                               NGX_HTTP_TOO_MANY_REQUESTS);
