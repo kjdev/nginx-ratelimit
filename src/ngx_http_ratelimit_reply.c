@@ -1,5 +1,24 @@
 #include "ngx_http_ratelimit_reply.h"
 
+/* Accumulate one decimal digit into *val, failing closed if the running
+ * value would exceed NGX_MAX_INT_T_VALUE. The script contract returns small
+ * seconds/counts, so the cap never rejects a valid reply; it only guards
+ * against a malformed response overflowing (UB for the signed retry_after,
+ * a wrapped header value for the unsigned fields). */
+static ngx_int_t
+ngx_http_ratelimit_accum_digit(ngx_uint_t *val, u_char ch)
+{
+    ngx_uint_t d = ch - '0';
+
+    if (*val > (NGX_MAX_INT_T_VALUE - d) / 10) {
+        return NGX_ERROR;
+    }
+
+    *val = *val * 10 + d;
+
+    return NGX_OK;
+}
+
 ngx_int_t
 ngx_http_ratelimit_process_reply(ngx_http_ratelimit_ctx_t *ctx, ssize_t bytes)
 {
@@ -111,7 +130,9 @@ ngx_http_ratelimit_process_reply(ngx_http_ratelimit_ctx_t *ctx, ssize_t bytes)
                 return NGX_ERROR;
             }
 
-            ctx->limit = ctx->limit * 10 + (ch - '0');
+            if (ngx_http_ratelimit_accum_digit(&ctx->limit, ch) != NGX_OK) {
+                return NGX_ERROR;
+            }
 
             break;
 
@@ -140,7 +161,9 @@ ngx_http_ratelimit_process_reply(ngx_http_ratelimit_ctx_t *ctx, ssize_t bytes)
                 return NGX_ERROR;
             }
 
-            ctx->remaining = ctx->remaining * 10 + (ch - '0');
+            if (ngx_http_ratelimit_accum_digit(&ctx->remaining, ch) != NGX_OK) {
+                return NGX_ERROR;
+            }
 
             break;
 
@@ -175,7 +198,15 @@ ngx_http_ratelimit_process_reply(ngx_http_ratelimit_ctx_t *ctx, ssize_t bytes)
                 return NGX_ERROR;
             }
 
-            ctx->retry_after = ctx->retry_after * 10 + (ch - '0');
+            /* retry_after is only ever accumulated as a non-negative value
+             * here; the -1 allowed sentinel is set in sw_ALLOWED. Aliasing
+             * the signed field through ngx_uint_t * is well-defined (same
+             * rank, signed/unsigned variant). */
+            if (ngx_http_ratelimit_accum_digit(
+                    (ngx_uint_t *) &ctx->retry_after, ch) != NGX_OK)
+            {
+                return NGX_ERROR;
+            }
 
             break;
 
@@ -217,7 +248,9 @@ ngx_http_ratelimit_process_reply(ngx_http_ratelimit_ctx_t *ctx, ssize_t bytes)
                 return NGX_ERROR;
             }
 
-            ctx->reset = ctx->reset * 10 + (ch - '0');
+            if (ngx_http_ratelimit_accum_digit(&ctx->reset, ch) != NGX_OK) {
+                return NGX_ERROR;
+            }
 
             break;
 
