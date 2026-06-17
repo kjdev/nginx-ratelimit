@@ -84,6 +84,12 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
+    /* -1 is the "allowed" sentinel for retry_after. The parser overwrites it
+     * from the reply, but defaulting here (pcalloc zeroes it to 0) avoids a
+     * spurious "Retry-After: 0" header if the reply never completes. The EVAL
+     * fallback re-applies the same default in resend_eval. */
+    ctx->retry_after = -1;
+
     if (ngx_http_complex_value(r, &rlcf->zone->key, &ctx->key) != NGX_OK) {
         return NGX_ERROR;
     }
