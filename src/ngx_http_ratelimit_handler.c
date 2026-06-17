@@ -62,6 +62,13 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
             return NGX_OK;
         }
 
+        /* A hard upstream error (redis unreachable, AUTH/SELECT rejected,
+         * timeout, ...) surfaces its HTTP status here so the phase engine
+         * emits it exactly once on this re-entry, failing the request closed. */
+        if (status >= NGX_HTTP_BAD_REQUEST) {
+            return (ngx_int_t) status;
+        }
+
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "rate limit unexpected status: %ui", status);
 

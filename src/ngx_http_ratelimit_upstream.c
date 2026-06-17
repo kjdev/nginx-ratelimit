@@ -71,6 +71,26 @@ ngx_http_ratelimit_finalize_upstream_request(ngx_http_request_t *r,
 
     r->connection->log->action = "sending to client";
 
+    /*
+     * The response is always produced by re-entering the phase handler: the
+     * first finalize only releases the extra reference taken for the upstream
+     * round-trip (no response is emitted), then ngx_http_core_run_phases re-
+     * enters the handler, which returns the decision (OK/429) or the error
+     * status, and the phase engine emits it exactly once.
+     *
+     * On a hard error the status is surfaced through u->state->status and the
+     * first finalize uses NGX_DONE so it does not emit a response. Passing the
+     * 5xx to the first finalize instead would send the special response now
+     * and the phase re-run would finalize a second time, emitting "header
+     * already sent while sending to client" once the response is on the wire.
+     */
+    if (rc != NGX_OK && rc != NGX_DONE) {
+        u->state->status = (rc == NGX_ERROR)
+                           ? NGX_HTTP_INTERNAL_SERVER_ERROR
+                           : (ngx_uint_t) rc;
+        rc = NGX_DONE;
+    }
+
     ngx_http_finalize_request(r, rc);
 
     ngx_http_core_run_phases(r);
