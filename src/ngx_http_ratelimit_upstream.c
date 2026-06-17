@@ -541,7 +541,10 @@ ngx_http_ratelimit_resend_eval(ngx_http_request_t *r)
     ctx->limit = 0;
     ctx->remaining = 0;
     ctx->reset = 0;
-    ctx->retry_after = 0;
+    /* -1 is the "allowed" sentinel; the parser overwrites it from the reply,
+     * but defaulting here avoids emitting a spurious "Retry-After: 0" if the
+     * EVAL reply never completes. */
+    ctx->retry_after = -1;
 
     /* AUTH/SELECT were already sent and consumed; never resend them. */
     ctx->prelude_replies = 0;
