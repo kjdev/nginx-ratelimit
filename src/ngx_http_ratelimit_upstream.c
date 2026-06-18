@@ -171,6 +171,7 @@ ngx_http_ratelimit_process_redis_response(ngx_http_request_t *r,
 
             if (u->out_bufs || u->busy_bufs) {
                 ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_DONE);
+                return;
             }
 
             if (u->busy_bufs == NULL) {
@@ -328,6 +329,13 @@ ngx_http_ratelimit_process_response(ngx_http_request_t *r,
         u->buffer.pos = u->buffer.start;
         u->buffer.last = u->buffer.start;
 
+        /*
+         * Carried over from the upstream original, this flushes the client
+         * connection even though we never send a body. It is harmless only
+         * because ignore_client_abort is set, which suppresses the resulting
+         * client-side error. If that setting is ever changed, drop this call
+         * and invoke ngx_http_ratelimit_read_body_handler(r, u) directly.
+         */
         if (ngx_http_send_special(r, NGX_HTTP_FLUSH) == NGX_ERROR) {
             ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
             return;
