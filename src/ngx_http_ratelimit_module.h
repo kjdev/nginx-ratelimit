@@ -26,7 +26,8 @@ typedef struct {
     ngx_uint_t                 requests; /* limit base per window */
     ngx_uint_t                 period;  /* window length in seconds */
     ngx_uint_t                 burst;   /* default burst headroom */
-    ngx_http_ratelimit_algo_t  algo;    /* fixed window / token bucket / gcra */
+    ngx_http_ratelimit_algo_t  algo;    /* fixed/sliding window, token bucket,
+                                         * or gcra */
 } ngx_http_ratelimit_zone_t;
 
 typedef struct {
