@@ -64,3 +64,29 @@ http {
 The exact claim variable name depends on the auth module; `ratelimit` only reads
 whatever variable you name in `key=`. If the variable is empty (unauthenticated)
 the request is not limited, so pair it with the auth module's own enforcement.
+
+## Smoothing the fixed-window boundary burst
+
+The fixed window admits up to `2×limit` across a window boundary. When you want
+a smoother limit but the integer-only, fixed-window cost (no floating-point
+bucket or TAT state), use `algo=sliding_window`. It weights the previous
+window's count by the fraction still inside the trailing window.
+
+```nginx
+http {
+    upstream redis { server 127.0.0.1:6379; keepalive 32; }
+
+    # 100 requests/minute, smoothed across the window boundary.
+    ratelimit_zone api key=$binary_remote_addr rate=100r/m algo=sliding_window;
+
+    server {
+        location /api/ {
+            ratelimit zone=api;
+            ratelimit_pass redis;
+            ratelimit_headers on;
+
+            proxy_pass http://backend;
+        }
+    }
+}
+```

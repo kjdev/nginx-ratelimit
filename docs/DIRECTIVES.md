@@ -23,7 +23,7 @@ See also [Algorithms](#algorithms) and [Response headers](#response-headers).
 
 ```
 Syntax:  ratelimit_zone <name> key=<var> (rate=<N>r/<s|m|h> | requests=<N> period=<time>)
-                         [burst=<N>] [algo=fixed_window|token_bucket|gcra];
+                         [burst=<N>] [algo=fixed_window|token_bucket|gcra|sliding_window];
 Default: —
 Context: http
 ```
@@ -39,7 +39,8 @@ Defines a named rate. Unlike `limit_req_zone` it allocates **no** shared memory
   units (`30s`, `5m`, `1h`).
 - `burst=` — extra headroom above `requests` (default `0`). Its exact meaning is
   per algorithm (see [Algorithms](#algorithms)).
-- `algo=` — `fixed_window` (default), `token_bucket`, or `gcra`.
+- `algo=` — `fixed_window` (default), `token_bucket`, `gcra`, or
+  `sliding_window`.
 
 ## `ratelimit`
 
@@ -163,14 +164,15 @@ Timeouts for connecting to, writing to, and reading from Redis.
 
 ## Algorithms
 
-All three run as a single atomic Lua script. `quantity=0` peeks without
+Each runs as a single atomic Lua script. `quantity=0` peeks without
 mutating state in every algorithm.
 
-| `algo`         | `limit` (X-RateLimit-Limit) | `burst` meaning | state in Redis |
-|----------------|-----------------------------|-----------------|----------------|
-| `fixed_window` | `requests + burst`          | extra requests within the window | counter + TTL |
-| `token_bucket` | `requests + burst` (capacity) | extra bucket capacity | `{tokens, ts}` hash |
-| `gcra`         | `burst + 1`                 | burst tolerance | theoretical arrival time |
+| `algo`           | `limit` (X-RateLimit-Limit)   | `burst` meaning | state in Redis |
+|------------------|-------------------------------|-----------------|----------------|
+| `fixed_window`   | `requests + burst`            | extra requests within the window | counter + TTL |
+| `token_bucket`   | `requests + burst` (capacity) | extra bucket capacity | `{tokens, ts}` hash |
+| `gcra`           | `burst + 1`                   | burst tolerance | theoretical arrival time |
+| `sliding_window` | `requests + burst`            | extra requests within the window | `{c, w, p}` integer hash |
 
 - **fixed_window** — `INCR` within a window of `period` seconds; the window
   rolls over via Redis key TTL. Simple and cheap; allows up to `2×limit` across
@@ -179,9 +181,14 @@ mutating state in every algorithm.
   `requests / period` tokens per second; a fresh bucket starts full.
 - **gcra** — the generic cell rate algorithm: a smooth `period / requests`
   emission interval with `burst` tolerance. `limit` is `burst + 1`.
+- **sliding_window** — a weighted approximation that estimates the rate as
+  `prev_count × weight + cur_count`, weighting the previous window's count by
+  the fraction still inside the trailing window. State is three integers, as
+  light as the fixed window, but it smooths the `2×limit` boundary burst.
 
-Token bucket and GCRA derive the current time from `redis.call('TIME')`, so the
-limiter is consistent across NGINX workers and hosts.
+Token bucket, GCRA, and sliding window derive the current time from
+`redis.call('TIME')`, so the limiter is consistent across NGINX workers and
+hosts.
 
 ## Response headers
 

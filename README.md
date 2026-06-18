@@ -29,7 +29,7 @@ This module is a fork of
 - Backend is **Redis only**. There is no shared-memory backend; for a
   single-node limit use the stock `limit_req`. This module is for the
   distributed case.
-- Algorithms: fixed window, token bucket, GCRA.
+- Algorithms: fixed window, token bucket, GCRA, sliding window.
 - It does **not** extract auth claims. Give it an NGINX variable as the key and
   delegate authentication to `auth_jwt` / `auth_request` / an API-key module.
 - Redis Cluster (hash-tag / slot routing) is out of scope for now.
