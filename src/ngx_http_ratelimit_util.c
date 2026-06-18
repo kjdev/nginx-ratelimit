@@ -137,8 +137,7 @@ ngx_http_ratelimit_set_custom_header(ngx_http_request_t *r, ngx_str_t *key,
     h->hash = 1;
     h->key = *key;
 
-    h->value.data = ngx_pnalloc(r->pool,
-                                ngx_http_ratelimit_get_num_size(value));
+    h->value.data = ngx_pnalloc(r->pool, NGX_INT_T_LEN);
     if (h->value.data == NULL) {
         h->hash = 0;
         return NGX_ERROR;
