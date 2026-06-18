@@ -55,6 +55,7 @@ for _ in $(seq 1 50); do
 done
 
 rcli() { "$VALKEY_CLI" -p "$REDIS_PORT" "$@"; }
+rclin() { "$VALKEY_CLI" -p "$REDIS_PORT" -n "$1" "${@:2}"; }
 
 # --- write nginx config ----------------------------------------------------
 mkdir -p "$WORK/logs"
@@ -71,6 +72,7 @@ http {
     ratelimit_zone wb key=\$remote_addr requests=4  period=2s;
     ratelimit_zone cc key=\$remote_addr requests=20 period=1m;
     ratelimit_zone ns key=\$remote_addr requests=100 period=1m;
+    ratelimit_zone db key=\$remote_addr requests=100 period=1m;
 
     server {
         listen 127.0.0.1:$HTTP_PORT;
@@ -81,6 +83,15 @@ http {
                        error_page 404 =200 /ok; }
         location /ns { ratelimit zone=ns; ratelimit_prefix ns; ratelimit_pass redis;
                        error_page 404 =200 /ok; }
+
+        # Two locations sharing one upstream (keepalive) but selecting different
+        # Redis DBs under an identical key name. Isolation must hold across
+        # connection reuse: the prelude SELECT runs on every request.
+        location /db1 { ratelimit zone=db; ratelimit_prefix di; ratelimit_database 1;
+                        ratelimit_pass redis; error_page 404 =200 /ok; }
+        location /db2 { ratelimit zone=db; ratelimit_prefix di; ratelimit_database 2;
+                        ratelimit_pass redis; error_page 404 =200 /ok; }
+
         location = /ok { return 200 "ok"; }
     }
 }
@@ -137,6 +148,24 @@ if [ "$c" = 200 ] && [ "$evalsha_failed" -ge 1 ] && [ "$eval_calls" -ge 1 ]; the
     pass "EVALSHA missed (NOSCRIPT) and EVAL fallback served the request"
 else
     bad "NOSCRIPT fallback"
+fi
+
+# --- check 4: SELECT db isolation across keepalive reuse ------------------
+echo "== db isolation (shared upstream, db 1 vs db 2, reused connections) =="
+rcli flushall >/dev/null
+# Interleave so a connection that last ran SELECT 1 is reused for a db-2
+# request and vice versa; the per-request SELECT must still route each count
+# to its own DB under the identical key name "di_127.0.0.1".
+for path in /db1 /db2 /db1 /db2 /db1 /db2 /db2 /db2; do
+    code "$path" >/dev/null
+done
+d1=$(rclin 1 get di_127.0.0.1); d1="${d1:-0}"
+d2=$(rclin 2 get di_127.0.0.1); d2="${d2:-0}"
+note "db1=$d1 (want 3) db2=$d2 (want 5)"
+if [ "$d1" = 3 ] && [ "$d2" = 5 ]; then
+    pass "counts stay isolated per SELECT db across connection reuse"
+else
+    bad "db isolation: db1=$d1 want 3, db2=$d2 want 5"
 fi
 
 echo

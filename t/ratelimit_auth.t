@@ -1,8 +1,9 @@
 #!/usr/bin/env perl
 
 # Requires a redis/valkey started with "--requirepass testpass" on
-# TEST_NGINX_REDIS_AUTH_PORT (default 6390). AUTH/SELECT are sent only on a
-# freshly opened connection; a reused keepalive connection skips them.
+# TEST_NGINX_REDIS_AUTH_PORT (default 6390). The AUTH/SELECT prelude is
+# prepended to every request, so a reused keepalive connection re-establishes
+# its DB and auth identity rather than inheriting a previous request's.
 
 use Test::Nginx::Socket;
 
