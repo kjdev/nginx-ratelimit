@@ -143,10 +143,11 @@ How this is verified in this repo:
 fork on a single node, in both an allow scenario (per-request decision overhead)
 and a reject scenario (reject path under overload); `run-keepalive.sh` isolates
 the upstream connection-keepalive payoff. On loopback the Redis-backed overhead
-is small (≈1.1x of the no-limit ceiling) and `limit_req` sits on the baseline —
-which is why single-node deployments should use `limit_req`; this module is for
-the distributed case. See [`benchmark/README.md`](benchmark/README.md) for
-methodology, how to run, and captured results.
+is small (within run-to-run noise of the no-limit ceiling) and `limit_req` sits
+on the baseline — which is why single-node deployments should use `limit_req`;
+this module is for the distributed case. See
+[`benchmark/README.md`](benchmark/README.md) for methodology, how to run, and
+captured results.
 
 ## Documentation
 
