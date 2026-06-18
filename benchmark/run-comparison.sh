@@ -6,7 +6,8 @@
 #   baseline    - location returning 200, no limiting at all (the ceiling)
 #   limit_req   - stock NGINX, shared-memory counter, no network hop
 #   weserv      - weserv/rate-limit-nginx-module + Redis RATER.LIMIT (GCRA in C)
-#   ratelimit   - this module + Redis EVALSHA (fixed window / token bucket / GCRA)
+#   ratelimit   - this module + Redis EVALSHA
+#                 (fixed window / token bucket / GCRA / sliding window)
 #
 # Two scenarios are measured (select with SCENARIO=allow|reject|both, default
 # both):
@@ -171,11 +172,12 @@ write_conf() {
             http_extra="upstream redis { server 127.0.0.1:$REDIS_PORT; keepalive 32; }"
             loc_body="rate_limit \$remote_addr requests=$rl_req period=$rl_period $ws_burst; rate_limit_prefix ws; rate_limit_pass redis;"
             ;;
-        ratelimit-fixed|ratelimit-token|ratelimit-gcra)
+        ratelimit-fixed|ratelimit-token|ratelimit-gcra|ratelimit-sliding)
             case "$approach" in
-                ratelimit-fixed) algo="";                  prefix=rlf;;
-                ratelimit-token) algo="algo=token_bucket"; prefix=rlt;;
-                ratelimit-gcra)  algo="algo=gcra";         prefix=rlg;;
+                ratelimit-fixed)   algo="";                    prefix=rlf;;
+                ratelimit-token)   algo="algo=token_bucket";   prefix=rlt;;
+                ratelimit-gcra)    algo="algo=gcra";           prefix=rlg;;
+                ratelimit-sliding) algo="algo=sliding_window"; prefix=rls;;
             esac
             http_extra="upstream redis { server 127.0.0.1:$REDIS_PORT; keepalive 32; }
     ratelimit_zone z key=\$remote_addr requests=$rl_req period=$rl_period $algo;"
@@ -313,9 +315,9 @@ run_scenario() {
 
 # --- drive the requested scenarios -----------------------------------------
 if [ "$WITH_WESERV" = 1 ]; then
-    APPROACHES="baseline limit_req weserv ratelimit-fixed ratelimit-token ratelimit-gcra"
+    APPROACHES="baseline limit_req weserv ratelimit-fixed ratelimit-token ratelimit-gcra ratelimit-sliding"
 else
-    APPROACHES="baseline limit_req ratelimit-fixed ratelimit-token ratelimit-gcra"
+    APPROACHES="baseline limit_req ratelimit-fixed ratelimit-token ratelimit-gcra ratelimit-sliding"
 fi
 SCENARIO="${SCENARIO:-both}"
 
