@@ -95,5 +95,7 @@ __DATA__
     GET /peek
 --- response_headers
 X-RateLimit-Limit: 4
+X-RateLimit-Remaining: 4
+X-RateLimit-Reset: 0
 !Retry-After
 --- error_code: 200
