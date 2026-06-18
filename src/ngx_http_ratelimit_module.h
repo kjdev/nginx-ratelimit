@@ -72,7 +72,7 @@ typedef struct {
     /* set once EVALSHA hit NOSCRIPT and we fell back to EVAL */
     ngx_flag_t          eval_fallback;
 
-    /* AUTH/SELECT prelude sent only on a freshly opened connection */
+    /* AUTH/SELECT prelude prepended to the EVALSHA on every request */
     ngx_chain_t        *prelude_chain;   /* built before upstream init */
     ngx_uint_t          prelude_replies; /* +OK replies left to consume */
     ngx_buf_t          *auth_buf;        /* AUTH buffer, zeroed when done */

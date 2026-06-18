@@ -158,7 +158,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     r->main->variables[rmcf->done_index].valid = 1;
 
     /* Build the AUTH/SELECT prelude up front (the only fallible step) so the
-     * post-init splice into request_bufs cannot fail. ctx is passed in since
+     * infallible prepend in create_request cannot fail. ctx is passed in since
      * it is not registered with the module until after upstream setup. */
     if (ngx_http_ratelimit_build_prelude(r, ctx) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -223,26 +223,6 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
 
     /* Override the read event handler to our own */
     u->read_event_handler = ngx_http_ratelimit_read_header_handler;
-
-    /* AUTH/SELECT is sent only on a freshly opened connection. A reused
-     * keepalive connection (peer.cached) is already authenticated, so the
-     * prelude is skipped. The prelude must precede the request, so it is only
-     * spliced while the request has not been sent yet (true for an async TCP
-     * connect, which returns NGX_AGAIN). A synchronous connect would have sent
-     * the request already; that path is left to the natural -NOAUTH handling. */
-    if (ctx->prelude_chain != NULL && !u->peer.cached && !u->request_sent) {
-        ngx_chain_t *cl;
-
-        for (cl = ctx->prelude_chain; cl->next; cl = cl->next) { /* void */
-        }
-
-        cl->next = u->request_bufs;
-        u->request_bufs = ctx->prelude_chain;
-
-    } else {
-        /* Prelude not sent: do not wait for its replies. */
-        ctx->prelude_replies = 0;
-    }
 
     return NGX_AGAIN;
 }
@@ -360,11 +340,35 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
     cl->buf = b;
     cl->next = NULL;
 
-    /* We are only sending one buffer. */
+    /* EVALSHA is the final buffer in the request frame. */
     b->last_buf = 1;
 
-    /* Attach the buffer to the request. */
-    r->upstream->request_bufs = cl;
+    /*
+     * Prepend the AUTH/SELECT prelude ahead of the EVALSHA so the connection's
+     * selected DB and auth identity are established on every request. The
+     * keepalive pool is keyed by peer address only and ignores the selected DB
+     * and auth identity, so a reused connection may carry a previous location's
+     * SELECT/AUTH. Building the prelude into request_bufs here (before connect)
+     * keeps tenant isolation independent of connection-reuse state; a reused
+     * connection that synchronously sends the request inside upstream_init
+     * could no longer be spliced after the fact.
+     *
+     * Skipped on the EVAL resend (eval_fallback): the prelude was already sent
+     * and consumed on the first pass, and send_eval writes only the first
+     * buffer of request_bufs.
+     */
+    if (!ctx->eval_fallback && ctx->prelude_chain != NULL) {
+        ngx_chain_t *pcl;
+
+        for (pcl = ctx->prelude_chain; pcl->next; pcl = pcl->next) { /* void */
+        }
+
+        pcl->next = cl;
+        r->upstream->request_bufs = ctx->prelude_chain;
+
+    } else {
+        r->upstream->request_bufs = cl;
+    }
 
     return NGX_OK;
 }
@@ -401,8 +405,9 @@ ngx_http_ratelimit_append_command(ngx_http_request_t *r, ngx_chain_t ***ll,
 
 /*
  * Build the AUTH/SELECT prelude for this request. The chain is assembled here
- * (the only step that allocates) and held in the ctx; the handler splices it
- * ahead of the EVALSHA request only when the connection is freshly opened.
+ * (the only step that allocates) and held in the ctx; create_request prepends
+ * it ahead of the EVALSHA on every request, so the connection's selected DB
+ * and auth identity never depend on keepalive reuse state.
  */
 static ngx_int_t
 ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
