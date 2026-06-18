@@ -9,8 +9,8 @@ Full reference for `ngx_http_ratelimit_module`. See the
 - [`ratelimit_pass`](#ratelimit_pass) — the Redis upstream to query
 - [`ratelimit_prefix`](#ratelimit_prefix) — prefix to namespace counters
 - [`ratelimit_quantity`](#ratelimit_quantity) — units consumed (`0` peeks)
-- [`ratelimit_password`](#ratelimit_password) — `AUTH` on a new connection
-- [`ratelimit_database`](#ratelimit_database) — `SELECT` on a new connection
+- [`ratelimit_password`](#ratelimit_password) — `AUTH` before each rate check
+- [`ratelimit_database`](#ratelimit_database) — `SELECT` before each rate check
 - [`ratelimit_headers`](#ratelimit_headers) — emit `X-RateLimit-*` when allowed
 - [`ratelimit_status`](#ratelimit_status) — status for a rejected request
 - [`ratelimit_log_level`](#ratelimit_log_level) — log level for the exceeded message
@@ -96,8 +96,11 @@ Default: —
 Context: http, server, location
 ```
 
-Sends `AUTH <password>` when opening a new Redis connection. Required by most
-managed Redis. The password is wiped from the request buffer after use.
+Sends `AUTH <password>` ahead of every rate check (pipelined with the limit
+command, no extra round trip). Required by most managed Redis. Sending it on
+each request keeps the connection's auth identity correct even when a pooled
+keepalive connection is reused across locations. The password is wiped from the
+request buffer after use.
 
 ## `ratelimit_database`
 
@@ -107,7 +110,10 @@ Default: — (database 0)
 Context: http, server, location
 ```
 
-Sends `SELECT <number>` on a new connection.
+Sends `SELECT <number>` ahead of every rate check (pipelined with the limit
+command, no extra round trip). Sending it on each request keeps counts isolated
+per database even when a pooled keepalive connection is reused across locations
+that select different databases.
 
 ## `ratelimit_headers`
 
