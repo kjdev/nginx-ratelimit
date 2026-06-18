@@ -168,6 +168,81 @@ static ngx_str_t ngx_http_ratelimit_gcra_lua = ngx_string(
     "redis.call('EXPIRE', KEYS[1], ttl)\n"
     "return {0, limit, remaining, -1, reset}\n");
 
+/*
+ * Sliding window counter. State is a hash {c, w, p}: the current window's
+ * count, the current window index, and the previous window's count. All
+ * integers, so storage stays as light as the fixed window.
+ *
+ *   KEYS[1]  state key
+ *   ARGV[1]  limit     max requests allowed per window (requests + burst)
+ *   ARGV[2]  window    window length in seconds
+ *   ARGV[3]  quantity  increment for this request; 0 peeks without consuming
+ *
+ * The rate is approximated as prev * weight + cur, where weight is the
+ * fraction of the previous window still inside the trailing window. This
+ * smooths the boundary burst the fixed window allows. The server clock
+ * (redis TIME) drives the window index so the limiter is consistent across
+ * nginx workers. limit = requests + burst, remaining = floor(limit - rate),
+ * reset = seconds until the current window rolls over.
+ */
+static ngx_str_t ngx_http_ratelimit_sliding_window_lua = ngx_string(
+    "local limit = tonumber(ARGV[1])\n"
+    "local window = tonumber(ARGV[2])\n"
+    "local quantity = tonumber(ARGV[3])\n"
+    "local t = redis.call('TIME')\n"
+    "local now = tonumber(t[1]) + tonumber(t[2]) / 1000000\n"
+    "local cur_win = math.floor(now / window)\n"
+    "local elapsed = now - cur_win * window\n"
+    "local weight = (window - elapsed) / window\n"
+    "local data = redis.call('HMGET', KEYS[1], 'c', 'w', 'p')\n"
+    "local c = tonumber(data[1])\n"
+    "local w = tonumber(data[2])\n"
+    "local p = tonumber(data[3])\n"
+    "if c == nil then\n"
+    "  c = 0\n"
+    "  w = cur_win\n"
+    "  p = 0\n"
+    "end\n"
+    "if w == cur_win - 1 then\n"
+    "  p = c\n"
+    "  c = 0\n"
+    "  w = cur_win\n"
+    "elseif w ~= cur_win then\n"
+    "  p = 0\n"
+    "  c = 0\n"
+    "  w = cur_win\n"
+    "end\n"
+    "local est = p * weight + c\n"
+    "local remaining = math.floor(limit - est)\n"
+    "if remaining < 0 then remaining = 0 end\n"
+    "local win_remaining = math.ceil(window - elapsed)\n"
+    "if win_remaining < 0 then win_remaining = 0 end\n"
+    "if quantity == 0 then\n"
+    "  local status = 0\n"
+    "  if est >= limit then status = 1 end\n"
+    "  local reset = 0\n"
+    "  if c > 0 or p > 0 then reset = win_remaining end\n"
+    "  return {status, limit, remaining, -1, reset}\n"
+    "end\n"
+    "if est + quantity > limit then\n"
+    "  local headroom = limit - quantity - c\n"
+    "  local retry_after\n"
+    "  if p > 0 and headroom >= 0 then\n"
+    "    retry_after = math.ceil((window - elapsed) - headroom * window / p)\n"
+    "  else\n"
+    "    retry_after = win_remaining\n"
+    "  end\n"
+    "  if retry_after < 1 then retry_after = 1 end\n"
+    "  return {1, limit, remaining, retry_after, win_remaining}\n"
+    "end\n"
+    "c = c + quantity\n"
+    "redis.call('HSET', KEYS[1], 'c', c, 'w', w, 'p', p)\n"
+    "redis.call('EXPIRE', KEYS[1], window * 2)\n"
+    "est = p * weight + c\n"
+    "remaining = math.floor(limit - est)\n"
+    "if remaining < 0 then remaining = 0 end\n"
+    "return {0, limit, remaining, -1, win_remaining}\n");
+
 typedef struct {
     ngx_str_t  body;
     ngx_str_t  sha;
@@ -178,7 +253,8 @@ typedef struct {
 static ngx_http_ratelimit_script_t ngx_http_ratelimit_scripts[] = {
     { ngx_null_string, ngx_null_string, { 0 } }, /* fixed window */
     { ngx_null_string, ngx_null_string, { 0 } }, /* token bucket */
-    { ngx_null_string, ngx_null_string, { 0 } }  /* gcra */
+    { ngx_null_string, ngx_null_string, { 0 } }, /* gcra */
+    { ngx_null_string, ngx_null_string, { 0 } }  /* sliding window */
 };
 
 void
@@ -195,6 +271,8 @@ ngx_http_ratelimit_script_init(void)
         ngx_http_ratelimit_token_bucket_lua;
     ngx_http_ratelimit_scripts[NGX_HTTP_RATELIMIT_ALGO_GCRA].body =
         ngx_http_ratelimit_gcra_lua;
+    ngx_http_ratelimit_scripts[NGX_HTTP_RATELIMIT_ALGO_SLIDING_WINDOW].body =
+        ngx_http_ratelimit_sliding_window_lua;
 
     n = sizeof(ngx_http_ratelimit_scripts)
         / sizeof(ngx_http_ratelimit_scripts[0]);

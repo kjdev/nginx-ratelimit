@@ -307,10 +307,13 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
     /* KEYS[1] */
     argv[3] = ctx->key;
 
-    if (algo == NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW) {
+    if (algo == NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW
+        || algo == NGX_HTTP_RATELIMIT_ALGO_SLIDING_WINDOW)
+    {
 
         /* ARGV: <limit> <window> <quantity>; limit is requests plus burst
-         * headroom over the window. */
+         * headroom over the window. Fixed and sliding window share the
+         * mapping; the sliding script weights the previous window's count. */
         if (ngx_http_ratelimit_set_uint_arg(r, &argv[4],
                                             rlcf->zone->requests + burst)
             != NGX_OK

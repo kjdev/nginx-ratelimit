@@ -497,6 +497,11 @@ ngx_http_ratelimit_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             {
                 zone->algo = NGX_HTTP_RATELIMIT_ALGO_GCRA;
 
+            } else if (s.len == sizeof("sliding_window") - 1
+                       && ngx_strncmp(s.data, "sliding_window", s.len) == 0)
+            {
+                zone->algo = NGX_HTTP_RATELIMIT_ALGO_SLIDING_WINDOW;
+
             } else {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                    "invalid algo \"%V\"", &value[i]);

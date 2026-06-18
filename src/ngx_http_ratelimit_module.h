@@ -14,7 +14,8 @@ extern ngx_module_t ngx_http_ratelimit_module;
 typedef enum {
     NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW = 0,
     NGX_HTTP_RATELIMIT_ALGO_TOKEN_BUCKET,
-    NGX_HTTP_RATELIMIT_ALGO_GCRA
+    NGX_HTTP_RATELIMIT_ALGO_GCRA,
+    NGX_HTTP_RATELIMIT_ALGO_SLIDING_WINDOW
 } ngx_http_ratelimit_algo_t;
 
 /* A named rate definition (ratelimit_zone). No shared memory is allocated;
