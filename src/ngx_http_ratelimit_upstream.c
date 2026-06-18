@@ -324,7 +324,20 @@ ngx_http_ratelimit_process_response(ngx_http_request_t *r,
             return;
         }
 
-        ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_DONE);
+        /*
+         * The filter sets u->length to 0 once the reply is fully parsed. If
+         * the reply was split across reads and only a prefix arrived with the
+         * header, the parse is incomplete (u->length still -1); finalizing
+         * here would abandon the rest of the reply and fail open (the request
+         * would be treated as allowed). Defer to the body read handler, which
+         * keeps reading until the reply completes.
+         */
+        if (u->length == 0) {
+            ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_DONE);
+            return;
+        }
+
+        ngx_http_ratelimit_read_body_handler(r, u);
     } else {
         u->buffer.pos = u->buffer.start;
         u->buffer.last = u->buffer.start;
