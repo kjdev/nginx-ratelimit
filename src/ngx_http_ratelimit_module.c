@@ -4,6 +4,8 @@
 #include "ngx_http_ratelimit_util.h"
 
 static ngx_int_t ngx_http_ratelimit_init(ngx_conf_t *cf);
+static ngx_int_t ngx_http_ratelimit_done_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data);
 static void *ngx_http_ratelimit_create_main_conf(ngx_conf_t *cf);
 static void *ngx_http_ratelimit_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_ratelimit_merge_loc_conf(ngx_conf_t *cf, void *parent,
@@ -668,6 +670,9 @@ ngx_http_ratelimit_init(ngx_conf_t *cf)
 {
     ngx_http_handler_pt *h;
     ngx_http_core_main_conf_t *cmcf;
+    ngx_http_ratelimit_main_conf_t *rmcf;
+    ngx_http_variable_t *var;
+    ngx_str_t name = ngx_string("ratelimit_done");
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_PREACCESS_PHASE].handlers);
@@ -678,8 +683,42 @@ ngx_http_ratelimit_init(ngx_conf_t *cf)
 
     *h = ngx_http_ratelimit_handler;
 
+    /* Reserve a per-request variable slot for the one-shot "already decided"
+     * marker. The handler writes/reads the slot directly via
+     * r->main->variables[done_index]; the slot survives the r->ctx wipe an
+     * internal redirect does, letting the limiter run exactly once per main
+     * request. The variable is registered only so the reserved index resolves
+     * (an indexed variable with no definition is rejected as "unknown"); its
+     * get handler is never relied upon by the limiter. */
+    var = ngx_http_add_variable(cf, &name, NGX_HTTP_VAR_NOCACHEABLE);
+    if (var == NULL) {
+        return NGX_ERROR;
+    }
+
+    var->get_handler = ngx_http_ratelimit_done_variable;
+
+    rmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_ratelimit_module);
+
+    rmcf->done_index = ngx_http_get_variable_index(cf, &name);
+    if (rmcf->done_index == NGX_ERROR) {
+        return NGX_ERROR;
+    }
+
     /* Cache the script SHA1 for EVALSHA before any request runs. */
     ngx_http_ratelimit_script_init();
+
+    return NGX_OK;
+}
+
+/* Get handler for the internal "ratelimit_done" marker variable. The limiter
+ * reads/writes the slot directly (r->main->variables[done_index]); this only
+ * exists so the reserved index has a definition. An explicit "$ratelimit_done"
+ * reference before the limiter runs resolves to nothing. */
+static ngx_int_t
+ngx_http_ratelimit_done_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data)
+{
+    v->not_found = 1;
 
     return NGX_OK;
 }

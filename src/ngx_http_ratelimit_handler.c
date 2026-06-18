@@ -31,6 +31,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     ngx_http_upstream_t *u;
     ngx_http_ratelimit_ctx_t *ctx;
     ngx_http_ratelimit_loc_conf_t *rlcf;
+    ngx_http_ratelimit_main_conf_t *rmcf;
     size_t len;
     u_char *p, *n;
     ngx_uint_t status;
@@ -42,6 +43,8 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     if (rlcf->zone == NULL) {
         return NGX_DECLINED;
     }
+
+    rmcf = ngx_http_get_module_main_conf(r, ngx_http_ratelimit_module);
 
     /* Defense in depth: merge_loc_conf rejects an active zone without a target
      * at config load, so this should be unreachable. Guard it anyway because
@@ -88,6 +91,15 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
                       "rate limit unexpected status: %ui", status);
 
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    /* No in-flight ctx here means this is either a brand-new request or a
+     * PREACCESS re-run after an internal redirect (which wiped r->ctx). If the
+     * marker on the main request is set, the limiter already decided for this
+     * request, so decline rather than issue a second EVALSHA and double-count.
+     * This mirrors limit_req's one-shot per-main-request behaviour. */
+    if (r->main->variables[rmcf->done_index].valid) {
+        return NGX_DECLINED;
     }
 
     ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_ratelimit_ctx_t));
@@ -137,6 +149,13 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
     }
 
     ctx->request = r;
+
+    /* The key is non-empty and we are committing to an EVALSHA: set the
+     * one-shot marker on the main request now so any later PREACCESS re-run
+     * (internal redirect, error_page, subrequest) declines instead of
+     * re-evaluating. Setting it only once the key resolves non-empty keeps a
+     * "/" with an empty key but a non-empty key after redirect working. */
+    r->main->variables[rmcf->done_index].valid = 1;
 
     /* Build the AUTH/SELECT prelude up front (the only fallible step) so the
      * post-init splice into request_bufs cannot fail. ctx is passed in since

@@ -30,6 +30,11 @@ typedef struct {
 
 typedef struct {
     ngx_array_t  zones;              /* of ngx_http_ratelimit_zone_t */
+
+    /* Index of the reserved per-request variable slot used as the one-shot
+     * "already decided" marker. It survives the r->ctx wipe that an internal
+     * redirect performs, so the limiter runs once per main request. */
+    ngx_int_t    done_index;
 } ngx_http_ratelimit_main_conf_t;
 
 typedef struct {
