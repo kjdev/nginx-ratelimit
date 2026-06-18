@@ -32,7 +32,7 @@ node, so the price of distribution is visible against the in-process baseline:
 - **limit_req** — stock NGINX, shared-memory counter, no network hop.
 - **weserv** — `weserv/rate-limit-nginx-module` + Redis `RATER.LIMIT` (GCRA in C).
 - **ratelimit** — this module + Redis `EVALSHA`, run for each algorithm
-  (`fixed window`, `token_bucket`, `gcra`).
+  (`fixed window`, `token_bucket`, `gcra`, `sliding_window`).
 
 It runs two scenarios (`SCENARIO=allow|reject|both`, default `both`):
 
@@ -81,21 +81,23 @@ that real cost is what `run-keepalive.sh` isolates.
 See [`results/`](results/) for captured runs with full environment headers.
 A representative loopback run (i7-9700K, valkey 9, `-n 50000 -c 100`):
 
-| approach        | vs baseline (rps ratio) |
-|-----------------|------------------------:|
-| limit_req       |                   1.00x |
-| ratelimit-gcra  |                   1.03x |
-| weserv          |                   1.04x |
-| ratelimit-fixed |                   1.10x |
-| ratelimit-token |                   1.18x |
+| approach          | vs baseline (rps ratio) |
+|-------------------|------------------------:|
+| limit_req         |                   0.95x |
+| ratelimit-gcra    |                   1.00x |
+| ratelimit-token   |                   0.99x |
+| ratelimit-sliding |                   0.99x |
+| ratelimit-fixed   |                   0.99x |
+| weserv            |                   0.99x |
 
-`limit_req` sits on the baseline (shared memory, no network). The Redis-backed
-approaches cluster at roughly 1.07–1.09x; the spread between weserv, `EVALSHA`,
-and this module's three algorithms is within the run-to-run noise of a loopback
-setup, so do not read an algorithm ranking into it. In the **reject** scenario
-every limiter rejects at the serve-everything ceiling — a Redis-backed reject
-still pays the round-trip, but the empty-body 429 is cheaper to send than the
-file, so rejecting is no slower than allowing. Full tables and discussion:
+`limit_req` sits near the baseline (shared memory, no network) — in this run it
+was slightly below it (0.95x), which is just loopback noise. The
+Redis-backed approaches all cluster at 0.99–1.00x; the spread between weserv,
+`EVALSHA`, and this module's four algorithms is within the run-to-run noise of a
+loopback setup, so do not read an algorithm ranking into it. In the **reject**
+scenario every limiter rejects at the serve-everything ceiling — a Redis-backed
+reject still pays the round-trip, but the empty-body 429 is cheaper to send than
+the file, so rejecting is no slower than allowing. Full tables and discussion:
 [`results/i7-9700k-loopback.md`](results/i7-9700k-loopback.md).
 
 ## `run-keepalive.sh` — where keepalive pays off

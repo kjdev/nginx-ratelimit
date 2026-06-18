@@ -2,8 +2,9 @@
 
 Captured with `benchmark/run-comparison.sh`. Numbers are loopback-only and carry
 run-to-run noise larger than the gaps between approaches; treat differences
-below ~5–10% as parity (see the two runs below — the Redis-backed ordering
-reshuffles between them).
+below ~5–10% as parity (see the allow and reject tables below — the Redis-backed
+ordering, and even where `limit_req` lands relative to the baseline, reshuffles
+between them).
 
 ## Environment
 
@@ -18,26 +19,32 @@ reshuffles between them).
 
 Measures the overhead of the limit *decision* on the allow path.
 
-| approach        |      rps | mean (ms) | p99 (ms) | vs baseline |
-|-----------------|---------:|----------:|---------:|------------:|
-| baseline        | 30273.42 |     3.303 |        4 | 1.00x (ref) |
-| limit_req       | 29915.33 |     3.343 |        4 |       1.01x |
-| weserv          | 27855.26 |     3.590 |        6 |       1.09x |
-| ratelimit-fixed | 28423.92 |     3.518 |        6 |       1.07x |
-| ratelimit-token | 28154.88 |     3.552 |        6 |       1.08x |
-| ratelimit-gcra  | 28211.26 |     3.545 |        6 |       1.07x |
+| approach          |      rps | mean (ms) | p99 (ms) | vs baseline |
+|-------------------|---------:|----------:|---------:|------------:|
+| baseline          | 29281.87 |     3.415 |        5 | 1.00x (ref) |
+| limit_req         | 30951.84 |     3.231 |        4 |       0.95x |
+| weserv            | 29551.74 |     3.384 |        5 |       0.99x |
+| ratelimit-fixed   | 29451.35 |     3.395 |        5 |       0.99x |
+| ratelimit-token   | 29645.99 |     3.373 |        5 |       0.99x |
+| ratelimit-gcra    | 29348.70 |     3.407 |        5 |       1.00x |
+| ratelimit-sliding | 29691.35 |     3.368 |        5 |       0.99x |
 
 `vs baseline` = baseline_rps / approach_rps (how many times the no-limit ceiling
 exceeds this approach's throughput; higher = more overhead).
 
-- **limit_req sits on the baseline.** Its counter is in shared memory with no
-  network hop, so it costs essentially nothing here. This is why the module
-  defers to it for single-node deployments.
-- **The Redis-backed approaches give up roughly 5–10% throughput** on loopback —
-  one local round-trip per request. weserv (`RATER.LIMIT`, GCRA in C) and this
-  module's three algorithms all land in the same band; the within-band ordering
-  is inside the run-to-run noise of a loopback setup (it reshuffles between
-  repeats), so do not read an algorithm ranking into it.
+- **Every approach lands within loopback noise of the baseline.** In this run
+  `limit_req` even measured slightly *faster* than the no-limit baseline (0.95x)
+  and the four Redis-backed algorithms plus weserv all sit at 0.99–1.00x — the
+  per-request differences are smaller than the run-to-run variance, so no
+  approach can be said to beat another here.
+- **`limit_req` costs essentially nothing.** Its counter is in shared memory with
+  no network hop. This is why the module defers to it for single-node
+  deployments.
+- **The Redis-backed approaches each add one local round-trip per request.**
+  weserv (`RATER.LIMIT`, GCRA in C) and this module's four algorithms (fixed
+  window, token bucket, GCRA, sliding window) all land in the same band; the
+  within-band ordering is inside the run-to-run noise of a loopback setup (it
+  reshuffles between repeats), so do not read an algorithm ranking into it.
 - **This is a floor, not the deployment number.** Against a networked managed
   Redis every request additionally pays a WAN round-trip plus TLS and a
   per-connection AUTH/SELECT handshake — costs loopback cannot reproduce, and
@@ -49,14 +56,15 @@ Measures the reject path under sustained overload — how fast each limiter says
 no. The warmup uses up the small allowance, so the measured run is 100%
 rejected (`baseline` has no limiter and is the serve-everything reference).
 
-| approach        |      rps | mean (ms) | p99 (ms) | rejected |
-|-----------------|---------:|----------:|---------:|---------:|
-| baseline        | 31524.50 |     3.172 |        4 |     0.0% |
-| limit_req       | 31521.30 |     3.172 |        4 |   100.0% |
-| weserv          | 31507.71 |     3.174 |        4 |   100.0% |
-| ratelimit-fixed | 29333.36 |     3.409 |        6 |   100.0% |
-| ratelimit-token | 31026.24 |     3.223 |        4 |   100.0% |
-| ratelimit-gcra  | 31023.09 |     3.223 |        4 |   100.0% |
+| approach          |      rps | mean (ms) | p99 (ms) | rejected |
+|-------------------|---------:|----------:|---------:|---------:|
+| baseline          | 30770.88 |     3.250 |        4 |     0.0% |
+| limit_req         | 30987.42 |     3.227 |        4 |   100.0% |
+| weserv            | 30485.63 |     3.280 |        4 |   100.0% |
+| ratelimit-fixed   | 30539.46 |     3.274 |        4 |   100.0% |
+| ratelimit-token   | 30869.51 |     3.239 |        4 |   100.0% |
+| ratelimit-gcra    | 30561.45 |     3.272 |        4 |   100.0% |
+| ratelimit-sliding | 30375.05 |     3.292 |        4 |   100.0% |
 
 - **Rejecting is not slower than allowing.** A Redis-backed reject still pays the
   full round-trip (the Lua script / `RATER.LIMIT` runs and returns "deny"), but
