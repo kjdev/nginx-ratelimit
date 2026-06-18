@@ -10,10 +10,14 @@
 # throttled) but reach Redis through two upstreams: one with `keepalive`, one
 # without. ApacheBench drives all four; Requests/sec are tabulated.
 #
-# On loopback with no AUTH the per-request TCP connect is nearly free, so
-# keepalive shows little gain. With AUTH/SELECT the saved per-connection
-# handshake makes keepalive clearly faster -- which is the real deployment
-# target (ElastiCache / Memorystore / Upstash all require AUTH over TLS).
+# The AUTH/SELECT prelude is pipelined onto every request (it must, so a reused
+# keepalive connection cannot inherit a previous location's db/auth), so it is
+# no longer part of what keepalive saves. What keepalive saves is the connection
+# establishment itself: the TCP connect, and against networked managed Redis the
+# WAN round-trip plus TLS handshake. On loopback that connect is sub-millisecond,
+# so keepalive shows little gain in either setup; the payoff is realised against
+# networked managed Redis (ElastiCache / Memorystore / Upstash all run over TLS),
+# which this loopback test cannot reproduce.
 #
 # Self-contained: starts two valkey instances and nginx, then tears them down.
 # Run in a single shell invocation (shared network namespace):
@@ -132,6 +136,7 @@ echo "single-threaded and CPU-bound on HTTP processing at this rate, the loopbac
 echo "connect is sub-millisecond, and the module already serves bursts over a small"
 echo "number of reused per-worker connections regardless of the keepalive directive."
 echo "The keepalive payoff is realised against networked managed Redis, where every"
-echo "new connection costs a WAN round-trip plus TLS and a per-connection AUTH/SELECT"
-echo "handshake -- costs this loopback test cannot reproduce. The connection-reuse"
-echo "mechanism itself is verified separately (50 requests served over a single pooled Redis connection)."
+echo "new connection costs a WAN round-trip plus a TLS handshake -- costs this loopback"
+echo "test cannot reproduce. The AUTH/SELECT prelude is pipelined onto every request"
+echo "regardless of connection reuse, so it is not part of the keepalive saving. The"
+echo "connection-reuse mechanism itself is verified separately (50 requests served over a single pooled Redis connection)."

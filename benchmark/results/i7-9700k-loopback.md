@@ -46,9 +46,11 @@ exceeds this approach's throughput; higher = more overhead).
   within-band ordering is inside the run-to-run noise of a loopback setup (it
   reshuffles between repeats), so do not read an algorithm ranking into it.
 - **This is a floor, not the deployment number.** Against a networked managed
-  Redis every request additionally pays a WAN round-trip plus TLS and a
-  per-connection AUTH/SELECT handshake — costs loopback cannot reproduce, and
-  the reason the keepalive payoff (see `run-keepalive.sh`) only shows there.
+  Redis every request additionally pays a WAN round-trip, and each newly opened
+  connection a TLS handshake — costs loopback cannot reproduce, and the reason
+  the keepalive payoff (see `run-keepalive.sh`) only shows there. (The AUTH/SELECT
+  prelude is pipelined onto every request, so it adds no extra round-trip and is
+  not part of what keepalive saves.)
 
 ## Reject scenario (low cap, every measured request is rejected)
 

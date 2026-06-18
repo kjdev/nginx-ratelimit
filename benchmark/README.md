@@ -105,8 +105,10 @@ the file, so rejecting is no slower than allowing. Full tables and discussion:
 Drives one effectively-unlimited zone through two upstreams — one with
 `keepalive`, one without — against two Redis setups (`plain`, and
 `requirepass` + `SELECT`, the managed-Redis case). On loopback the per-request
-connect is nearly free so keepalive shows little gain; the saved AUTH/SELECT
-handshake is what makes it matter against networked managed Redis.
+connect is nearly free so keepalive shows little gain; the saved connection
+setup (WAN round-trip + TLS handshake) is what makes it matter against networked
+managed Redis. The AUTH/SELECT prelude is pipelined onto every request, so
+keepalive's payoff is the saved connection establishment, not the prelude.
 
 ```sh
 bash benchmark/run-keepalive.sh                   # defaults: -n 20000 -c 50
