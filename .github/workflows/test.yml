@@ -1,0 +1,191 @@
+name: test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions: {}
+
+defaults:
+  run:
+    shell: sh
+
+jobs:
+  test:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - if: ${{ matrix.nginx != 'alpine' }}
+        name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            cpanminus \
+            curl \
+            gnupg \
+            libssl-dev \
+            nginx \
+            nginx-dev \
+            redis-server
+          sudo cpanm -n Test::Nginx
+        env:
+          nginx_version: ${{ matrix.nginx }}
+          DEBIAN_FRONTEND: noninteractive
+          PERL_MM_USE_DEFAULT: 1
+      - if: ${{ matrix.nginx == 'alpine' }}
+        name: Install build dependencies with Alpine
+        run: |
+          apk add \
+            bash \
+            curl \
+            gcc \
+            gd-dev \
+            geoip-dev \
+            git \
+            libxslt-dev \
+            linux-headers \
+            make \
+            musl-dev \
+            nginx \
+            openssl-dev \
+            pcre2-dev \
+            perl-dev \
+            perl-utils \
+            redis \
+            zlib-dev
+          cpan -Ti Test::Nginx
+        env:
+          PERL_MM_USE_DEFAULT: 1
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          set-safe-directory: true
+          persist-credentials: false
+
+      - if: ${{ matrix.nginx == 'ubuntu' || matrix.nginx == 'alpine' }}
+        name: Build NGINX module with distribution
+        run: |
+          # Download Nginx
+          nginx_version="$(nginx -v 2>&1 | sed -e 's/^[^0-9]*//' -e 's/ .*$//')"
+          curl -sL -o "nginx-${nginx_version}.tar.gz" "https://nginx.org/download/nginx-${nginx_version}.tar.gz"
+          tar xf "nginx-${nginx_version}.tar.gz"
+          cd "nginx-${nginx_version}"
+          # Configure option
+          opt=$(nginx -V 2>&1 | tail -1 | sed -e 's/configure arguments://' -e 's| --add-dynamic-module=[^ ]*||g')
+          with_cc_opt=$(echo "${opt}" | grep -e "--with-cc-opt='[^']*'" -o | sed -e "s/^--with-cc-opt='//" -e "s/'$//")
+          with_ld_opt=$(echo "${opt}" | grep -e "--with-ld-opt='[^']*'" -o | sed -e "s/^--with-ld-opt='//" -e "s/'$//")
+          opt=$(echo "${opt}" | sed -e "s|--with-cc-opt='[^']*'||" -e "s|--with-ld-opt='[^']*'||" -e 's/--without-engine//')
+          # Run build
+          # shellcheck disable=SC2086
+          ./configure \
+            ${opt} \
+            --with-cc-opt="${with_cc_opt} -DNGX_HTTP_HEADERS" \
+            --with-ld-opt="${with_ld_opt}" \
+            --add-dynamic-module=..
+          make modules
+          # Copy module
+          if [ "${dist}" = "ubuntu" ]; then
+            sudo=sudo
+          fi
+          ${sudo} mkdir -p /usr/lib/nginx/modules
+          ${sudo} cp objs/ngx_http_ratelimit_module.so /usr/lib/nginx/modules/
+          ${sudo} mkdir -p /usr/local/sbin
+          ${sudo} ln -sfn /usr/sbin/nginx /usr/local/sbin/nginx
+        env:
+          dist: ${{ matrix.nginx }}
+      - if: ${{ matrix.nginx != 'ubuntu' && matrix.nginx != 'alpine' }}
+        name: Build NGINX module with sources
+        run: |
+          # Download Nginx
+          curl -sL -o "nginx-${nginx_version}.tar.gz" "https://nginx.org/download/nginx-${nginx_version}.tar.gz"
+          tar xf "nginx-${nginx_version}.tar.gz"
+          cd "nginx-${nginx_version}"
+          # Run build
+          ./configure \
+            --with-compat \
+            --add-dynamic-module=..
+          make
+          # Copy module
+          sudo mkdir -p /usr/lib/nginx/modules
+          sudo cp objs/ngx_http_ratelimit_module.so /usr/lib/nginx/modules/
+          sudo cp objs/nginx /usr/local/sbin/
+        env:
+          nginx_version: ${{ matrix.nginx }}
+
+      - name: Prepare tests
+        run: |
+          # nginx
+          echo "::group::nginx show version"
+          ${TEST_NGINX_BINARY} -V
+          echo "::endgroup::"
+          # Run Redis
+          echo "::group::run redis"
+          redis-cli --port 6379 ping >/dev/null 2>&1 || redis-server --port 6379 --daemonize yes
+          redis-cli --port 6390 ping >/dev/null 2>&1 || redis-server --port 6390 --requirepass 'testpass' --daemonize yes
+          echo "::endgroup::"
+        env:
+          TEST_NGINX_BINARY: /usr/local/sbin/nginx
+
+      - name: Run Test::Nginx tests
+        run: |
+          # Run test
+          set +e
+          prove -r t 2> stderr.log
+          test_status=$?
+          set -e
+          # stderr
+          if [ -s stderr.log ]; then
+            echo "::group::stderr"
+            cat stderr.log
+            echo "::endgroup::"
+          fi
+          exit "${test_status}"
+        env:
+          TEST_NGINX_LOAD_MODULES: /usr/lib/nginx/modules/ngx_http_ratelimit_module.so
+          TEST_NGINX_SERVROOT: /tmp/servroot
+          TEST_NGINX_BINARY: /usr/local/sbin/nginx
+
+      - name: Run integration tests
+        run: |
+          # Run test
+          set +e
+          ./t/run-integration.sh 2> stderr.log
+          test_status=$?
+          set -e
+          # stderr
+          if [ -s stderr.log ]; then
+            echo "::group::stderr"
+            cat stderr.log
+            echo "::endgroup::"
+          fi
+          exit "${test_status}"
+        env:
+          TEST_NGINX_LOAD_MODULES: /usr/lib/nginx/modules/ngx_http_ratelimit_module.so
+          TEST_NGINX_SERVROOT: /tmp/servroot
+          TEST_NGINX_BINARY: /usr/local/sbin/nginx
+          VALKEY: redis-server
+          VALKEY_CLI: redis-cli
+
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        nginx:
+          - alpine
+          - ubuntu
+          - '1.30.3' # stable
+          - '1.31.2' # mainline
+    container:
+      image: ${{ matrix.nginx == 'alpine' && 'alpine:latest' || null }}
+      options: ${{ matrix.nginx == 'alpine' && '--init' || null }}
