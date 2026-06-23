@@ -10,10 +10,9 @@ This module is a fork of
 (BSD-3-Clause); see [`NOTICE`](NOTICE) for provenance and the full list of
 changes from upstream.
 
-## [Unreleased]
+## [0.1.0] - 2026-06-24
 
-No release has been tagged yet. The entries below describe the work done since
-the fork.
+The entries below describe the work done since the fork.
 
 ### Added
 
