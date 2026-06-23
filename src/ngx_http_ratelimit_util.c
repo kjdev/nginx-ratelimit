@@ -147,6 +147,7 @@ ngx_http_ratelimit_set_custom_header(ngx_http_request_t *r, ngx_str_t *key,
 
     h->lowcase_key = ngx_pnalloc(r->pool, h->key.len);
     if (h->lowcase_key == NULL) {
+        h->hash = 0;
         return NGX_ERROR;
     }
 
