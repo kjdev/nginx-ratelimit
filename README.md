@@ -85,8 +85,10 @@ serves all algorithms.
   `SCRIPT FLUSH`) gets `-NOSCRIPT`; the module transparently resends the request
   once with `EVAL <script>` on the same connection and keeps using `EVALSHA`
   afterwards.
-- `AUTH` / `SELECT` are sent **only on a freshly opened connection**; a reused
-  keepalive connection goes straight to `EVALSHA`.
+- `AUTH` / `SELECT` (when configured) are **pipelined ahead of every rate
+  check** (alongside the `EVALSHA`, no extra round trip), so the connection's
+  auth identity and selected database stay correct even on a reused keepalive
+  connection.
 - If the key variable resolves to an empty value the request is **not limited**
   (the handler declines and the request proceeds).
 - If Redis is unreachable or returns an error, the request **fails closed**
