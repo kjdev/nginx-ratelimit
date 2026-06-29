@@ -10,6 +10,18 @@ This module is a fork of
 (BSD-3-Clause); see [`NOTICE`](NOTICE) for provenance and the full list of
 changes from upstream.
 
+## [Unreleased]
+
+### Added
+
+- A `custom` algorithm: `ratelimit_zone ... algo=custom script=<path>` loads a
+  user-supplied Lua script. It receives the same `KEYS[1]` / `ARGV[1..4]`
+  (`requests`, `period`, `burst`, `quantity`) contract as the built-ins and must
+  return the same 5-integer reply; a script that breaks the contract fails
+  closed. The body is loaded at config time (rejecting a missing, empty, or
+  oversized file), and `EVALSHA` with `NOSCRIPT` → `EVAL` fallback works as for
+  the built-in algorithms. See [`docs/CUSTOM_SCRIPT.md`](docs/CUSTOM_SCRIPT.md).
+
 ## [0.1.0] - 2026-06-24
 
 The entries below describe the work done since the fork.
