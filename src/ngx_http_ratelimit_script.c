@@ -267,10 +267,24 @@ static ngx_http_ratelimit_script_t ngx_http_ratelimit_scripts[] = {
 };
 
 void
-ngx_http_ratelimit_script_init(void)
+ngx_http_ratelimit_script_sha1(ngx_str_t *body, u_char *sha_buf, ngx_str_t *sha)
 {
     ngx_sha1_t sha1;
     u_char digest[20];
+
+    ngx_sha1_init(&sha1);
+    ngx_sha1_update(&sha1, body->data, body->len);
+    ngx_sha1_final(digest, &sha1);
+
+    ngx_hex_dump(sha_buf, digest, sizeof(digest));
+
+    sha->data = sha_buf;
+    sha->len = 40;
+}
+
+void
+ngx_http_ratelimit_script_init(void)
+{
     ngx_http_ratelimit_script_t *s;
     ngx_uint_t i, n;
 
@@ -288,16 +302,100 @@ ngx_http_ratelimit_script_init(void)
 
     for (i = 0; i < n; i++) {
         s = &ngx_http_ratelimit_scripts[i];
-
-        ngx_sha1_init(&sha1);
-        ngx_sha1_update(&sha1, s->body.data, s->body.len);
-        ngx_sha1_final(digest, &sha1);
-
-        ngx_hex_dump(s->sha_buf, digest, sizeof(digest));
-
-        s->sha.data = s->sha_buf;
-        s->sha.len = sizeof(s->sha_buf);
+        ngx_http_ratelimit_script_sha1(&s->body, s->sha_buf, &s->sha);
     }
+}
+
+ngx_int_t
+ngx_http_ratelimit_script_read_file(ngx_conf_t *cf, ngx_str_t *path,
+    ngx_str_t *out)
+{
+    u_char *buf;
+    size_t size;
+    ssize_t n;
+    ngx_str_t name;
+    ngx_file_t file;
+    ngx_file_info_t fi;
+
+    /* Resolve a relative path against the nginx prefix, mirroring how
+     * directives such as ssl_certificate locate their files. */
+    name = *path;
+    if (ngx_conf_full_name(cf->cycle, &name, 0) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    ngx_memzero(&file, sizeof(ngx_file_t));
+    file.name = name;
+    file.log = cf->log;
+
+    file.fd = ngx_open_file(name.data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
+    if (file.fd == NGX_INVALID_FILE) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
+                           "ratelimit: cannot open script \"%V\"", &name);
+        return NGX_ERROR;
+    }
+
+    if (ngx_fd_info(file.fd, &fi) == NGX_FILE_ERROR) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
+                           "ratelimit: " ngx_fd_info_n " \"%V\" failed", &name);
+        goto failed;
+    }
+
+    if (!ngx_is_file(&fi)) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit: script \"%V\" is not a regular file",
+                           &name);
+        goto failed;
+    }
+
+    size = (size_t) ngx_file_size(&fi);
+
+    if (size == 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit: script \"%V\" is empty", &name);
+        goto failed;
+    }
+
+    if (size > NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit: script \"%V\" is %uz bytes, "
+                           "more than the %d byte limit",
+                           &name, size, NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN);
+        goto failed;
+    }
+
+    buf = ngx_palloc(cf->pool, size);
+    if (buf == NULL) {
+        goto failed;
+    }
+
+    n = ngx_read_file(&file, buf, size, 0);
+    if (n == NGX_ERROR) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
+                           "ratelimit: " ngx_read_file_n " \"%V\" failed",
+                           &name);
+        goto failed;
+    }
+
+    if ((size_t) n != size) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit: script \"%V\" read %z of %uz bytes",
+                           &name, n, size);
+        goto failed;
+    }
+
+    ngx_close_file(file.fd);
+
+    out->data = buf;
+    out->len = size;
+
+    return NGX_OK;
+
+failed:
+
+    ngx_close_file(file.fd);
+
+    return NGX_ERROR;
 }
 
 ngx_str_t *

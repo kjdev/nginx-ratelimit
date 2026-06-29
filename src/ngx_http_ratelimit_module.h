@@ -11,11 +11,20 @@ extern ngx_module_t ngx_http_ratelimit_module;
  * 16-bit length here, keeping the request frame small. */
 #define NGX_HTTP_RATELIMIT_MAX_KEY_LEN  65535
 
+/* Upper bound on a custom (algo=custom) Lua script body, validated when the
+ * file is read at config parse time. Keeps the script body load bounded and
+ * the EVAL fallback frame small. */
+#define NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN  65536
+
 typedef enum {
     NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW = 0,
     NGX_HTTP_RATELIMIT_ALGO_TOKEN_BUCKET,
     NGX_HTTP_RATELIMIT_ALGO_GCRA,
-    NGX_HTTP_RATELIMIT_ALGO_SLIDING_WINDOW
+    NGX_HTTP_RATELIMIT_ALGO_SLIDING_WINDOW,
+    /* User-supplied Lua script loaded from "script=". Kept last so the static
+     * ngx_http_ratelimit_scripts[] table (indexed by the built-in algorithms)
+     * is never indexed by it; the body and SHA live on the zone instead. */
+    NGX_HTTP_RATELIMIT_ALGO_CUSTOM
 } ngx_http_ratelimit_algo_t;
 
 /* A named rate definition (ratelimit_zone). No shared memory is allocated;
@@ -27,7 +36,15 @@ typedef struct {
     ngx_uint_t                 period;  /* window length in seconds */
     ngx_uint_t                 burst;   /* default burst headroom */
     ngx_http_ratelimit_algo_t  algo;    /* fixed/sliding window, token bucket,
-                                         * or gcra */
+                                         * gcra, or custom */
+
+    /* algo=custom only. The script body is read from script_path at config
+     * parse time; the SHA1 is computed in postconfiguration into sha_buf and
+     * referenced by script_sha. Empty for built-in algorithms. */
+    ngx_str_t  script_path;
+    ngx_str_t  script_body;
+    ngx_str_t  script_sha;
+    u_char     sha_buf[40];
 } ngx_http_ratelimit_zone_t;
 
 typedef struct {

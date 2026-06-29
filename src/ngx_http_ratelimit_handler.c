@@ -273,13 +273,18 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
 
     /* EVALSHA <sha> 1 <key> <args...>, falling back to EVAL <script> 1 <key>
      * ... once the server reports NOSCRIPT. The script is selected per zone
-     * algorithm. */
+     * algorithm; algo=custom carries its body and SHA on the zone rather than
+     * in the built-in table. */
     if (ctx->eval_fallback) {
         ngx_str_set(&argv[0], "EVAL");
-        argv[1] = *ngx_http_ratelimit_script_body(algo);
+        argv[1] = (algo == NGX_HTTP_RATELIMIT_ALGO_CUSTOM)
+                  ? rlcf->zone->script_body
+                  : *ngx_http_ratelimit_script_body(algo);
     } else {
         ngx_str_set(&argv[0], "EVALSHA");
-        argv[1] = *ngx_http_ratelimit_script_sha(algo);
+        argv[1] = (algo == NGX_HTTP_RATELIMIT_ALGO_CUSTOM)
+                  ? rlcf->zone->script_sha
+                  : *ngx_http_ratelimit_script_sha(algo);
     }
 
     ngx_str_set(&argv[2], "1");
@@ -309,8 +314,9 @@ ngx_http_ratelimit_create_request(ngx_http_request_t *r)
 
     } else {
 
-        /* Token bucket / GCRA share ARGV: <requests> <period> <burst>
-         * <quantity>. The script derives rate and capacity from them. */
+        /* Token bucket / GCRA / custom share ARGV: <requests> <period>
+         * <burst> <quantity>. The built-in scripts derive rate and capacity
+         * from them; a custom script receives the same fixed contract. */
         if (ngx_http_ratelimit_set_uint_arg(r, &argv[4], rlcf->zone->requests)
             != NGX_OK
             || ngx_http_ratelimit_set_uint_arg(r, &argv[5], rlcf->zone->period)

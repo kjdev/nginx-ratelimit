@@ -370,7 +370,7 @@ ngx_http_ratelimit_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ngx_str_t *value, s;
     ngx_int_t requests, period, burst;
-    ngx_uint_t i, has_rate, has_requests, has_period, has_key;
+    ngx_uint_t i, has_rate, has_requests, has_period, has_key, has_script;
     ngx_http_ratelimit_zone_t *zone;
     ngx_http_compile_complex_value_t ccv;
 
@@ -400,7 +400,7 @@ ngx_http_ratelimit_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     requests = 0;
     period = 0;
     burst = 0;
-    has_rate = has_requests = has_period = has_key = 0;
+    has_rate = has_requests = has_period = has_key = has_script = 0;
 
     for (i = 2; i < cf->args->nelts; i++) {
 
@@ -502,12 +502,32 @@ ngx_http_ratelimit_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             {
                 zone->algo = NGX_HTTP_RATELIMIT_ALGO_SLIDING_WINDOW;
 
+            } else if (s.len == sizeof("custom") - 1
+                       && ngx_strncmp(s.data, "custom", s.len) == 0)
+            {
+                zone->algo = NGX_HTTP_RATELIMIT_ALGO_CUSTOM;
+
             } else {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                    "invalid algo \"%V\"", &value[i]);
                 return NGX_CONF_ERROR;
             }
 
+            continue;
+        }
+
+        if (ngx_strncmp(value[i].data, "script=", 7) == 0) {
+
+            zone->script_path.len = value[i].len - 7;
+            zone->script_path.data = value[i].data + 7;
+
+            if (zone->script_path.len == 0) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid script path \"%V\"", &value[i]);
+                return NGX_CONF_ERROR;
+            }
+
+            has_script = 1;
             continue;
         }
 
@@ -536,6 +556,35 @@ ngx_http_ratelimit_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                            "ratelimit_zone \"%V\" requires \"rate=\" or both "
                            "\"requests=\" and \"period=\"",
                            &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    /* "script=" is the custom algorithm's body and is exclusive to it: required
+     * when algo=custom, rejected for every built-in algorithm. */
+    if (zone->algo == NGX_HTTP_RATELIMIT_ALGO_CUSTOM && !has_script) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit_zone \"%V\": \"algo=custom\" requires "
+                           "\"script=\"",
+                           &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    if (zone->algo != NGX_HTTP_RATELIMIT_ALGO_CUSTOM && has_script) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit_zone \"%V\": \"script=\" requires "
+                           "\"algo=custom\"",
+                           &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    /* Load the script body at parse time so a missing, empty, or oversized
+     * file fails the config with a line number. The SHA1 is computed later in
+     * postconfiguration alongside the built-in scripts. */
+    if (has_script
+        && ngx_http_ratelimit_script_read_file(cf, &zone->script_path,
+                                               &zone->script_body)
+        != NGX_OK)
+    {
         return NGX_CONF_ERROR;
     }
 
@@ -676,7 +725,9 @@ ngx_http_ratelimit_init(ngx_conf_t *cf)
     ngx_http_handler_pt *h;
     ngx_http_core_main_conf_t *cmcf;
     ngx_http_ratelimit_main_conf_t *rmcf;
+    ngx_http_ratelimit_zone_t *zone;
     ngx_http_variable_t *var;
+    ngx_uint_t i;
     ngx_str_t name = ngx_string("ratelimit_done");
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
@@ -709,8 +760,19 @@ ngx_http_ratelimit_init(ngx_conf_t *cf)
         return NGX_ERROR;
     }
 
-    /* Cache the script SHA1 for EVALSHA before any request runs. */
+    /* Cache the built-in script SHA1s for EVALSHA before any request runs. */
     ngx_http_ratelimit_script_init();
+
+    /* Compute the SHA1 of each custom zone's script body the same way, so the
+     * EVALSHA fast path and the EVAL NOSCRIPT fallback both work for them. */
+    zone = rmcf->zones.elts;
+    for (i = 0; i < rmcf->zones.nelts; i++) {
+        if (zone[i].algo == NGX_HTTP_RATELIMIT_ALGO_CUSTOM) {
+            ngx_http_ratelimit_script_sha1(&zone[i].script_body,
+                                           zone[i].sha_buf,
+                                           &zone[i].script_sha);
+        }
+    }
 
     return NGX_OK;
 }
