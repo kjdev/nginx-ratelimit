@@ -222,8 +222,8 @@ eval_calls="${eval_calls:-0}"
 note "responses=$c1,$c2 evalsha.calls=$evalsha_calls" \
      "evalsha.failed_calls=$evalsha_failed eval.calls=$eval_calls"
 if [ "$c1" = 200 ] && [ "$c2" = 200 ] \
-   && [ "$evalsha_failed" -eq 1 ] && [ "$eval_calls" -ge 1 ] \
-   && [ "$evalsha_calls" -ge 2 ]; then
+   && [ "$evalsha_failed" -eq 1 ] && [ "$eval_calls" -eq 1 ] \
+   && [ "$evalsha_calls" -eq 2 ]; then
     pass "custom script fell back to EVAL once, then served from the cached SHA"
 else
     bad "custom script NOSCRIPT fallback / SHA cache"
