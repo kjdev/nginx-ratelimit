@@ -311,6 +311,7 @@ ngx_http_ratelimit_script_read_file(ngx_conf_t *cf, ngx_str_t *path,
     ngx_str_t *out)
 {
     u_char *buf;
+    off_t fsize;
     size_t size;
     ssize_t n;
     ngx_str_t name;
@@ -348,21 +349,23 @@ ngx_http_ratelimit_script_read_file(ngx_conf_t *cf, ngx_str_t *path,
         goto failed;
     }
 
-    size = (size_t) ngx_file_size(&fi);
+    fsize = ngx_file_size(&fi);
 
-    if (size == 0) {
+    if (fsize == 0) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "ratelimit: script \"%V\" is empty", &name);
         goto failed;
     }
 
-    if (size > NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN) {
+    if (fsize > NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "ratelimit: script \"%V\" is %uz bytes, "
+                           "ratelimit: script \"%V\" is %O bytes, "
                            "more than the %d byte limit",
-                           &name, size, NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN);
+                           &name, fsize, NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN);
         goto failed;
     }
+
+    size = (size_t) fsize;
 
     buf = ngx_palloc(cf->pool, size);
     if (buf == NULL) {
