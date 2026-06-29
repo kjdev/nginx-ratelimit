@@ -57,8 +57,27 @@ done
 rcli() { "$VALKEY_CLI" -p "$REDIS_PORT" "$@"; }
 rclin() { "$VALKEY_CLI" -p "$REDIS_PORT" -n "$1" "${@:2}"; }
 
-# --- write nginx config ----------------------------------------------------
+# --- write the custom (algo=custom) Lua script -----------------------------
+# A self-contained fixed-window limiter using the custom ARGV contract
+# (ARGV[1..4] = requests, period, burst, quantity), returning the 5-integer
+# reply. Exercises the body and SHA the module loads from "script=".
 mkdir -p "$WORK/logs"
+cat > "$WORK/custom.lua" <<'LUA'
+local limit = tonumber(ARGV[1]) + tonumber(ARGV[3])
+local period = tonumber(ARGV[2])
+local quantity = tonumber(ARGV[4])
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+if current + quantity > limit then
+  return {1, limit, 0, period, 0}
+end
+local newval = redis.call('INCRBY', KEYS[1], quantity)
+redis.call('EXPIRE', KEYS[1], period)
+local remaining = limit - newval
+if remaining < 0 then remaining = 0 end
+return {0, limit, remaining, -1, period}
+LUA
+
+# --- write nginx config ----------------------------------------------------
 cat > "$WORK/nginx.conf" <<EOF
 load_module $MODULE;
 worker_processes 1;
@@ -67,12 +86,22 @@ error_log $WORK/logs/error.log info;
 events { worker_connections 256; }
 http {
     access_log off;
+
+    # Keep all runtime temp paths under the test work dir so the run does not
+    # depend on the build-time prefix (e.g. /var/lib/nginx) being writable.
+    client_body_temp_path $WORK/client_body;
+    proxy_temp_path $WORK/proxy;
+    fastcgi_temp_path $WORK/fastcgi;
+    uwsgi_temp_path $WORK/uwsgi;
+    scgi_temp_path $WORK/scgi;
+
     upstream redis { server 127.0.0.1:$REDIS_PORT; keepalive 16; }
 
     ratelimit_zone wb key=\$remote_addr requests=4  period=2s;
     ratelimit_zone cc key=\$remote_addr requests=20 period=1m;
     ratelimit_zone ns key=\$remote_addr requests=100 period=1m;
     ratelimit_zone db key=\$remote_addr requests=100 period=1m;
+    ratelimit_zone cu key=\$remote_addr requests=100 period=1m algo=custom script=$WORK/custom.lua;
 
     server {
         listen 127.0.0.1:$HTTP_PORT;
@@ -82,6 +111,8 @@ http {
         location /cc { ratelimit zone=cc; ratelimit_prefix cc; ratelimit_pass redis;
                        error_page 404 =200 /ok; }
         location /ns { ratelimit zone=ns; ratelimit_prefix ns; ratelimit_pass redis;
+                       error_page 404 =200 /ok; }
+        location /cu { ratelimit zone=cu; ratelimit_prefix cu; ratelimit_pass redis;
                        error_page 404 =200 /ok; }
 
         # Two locations sharing one upstream (keepalive) but selecting different
@@ -166,6 +197,36 @@ if [ "$d1" = 3 ] && [ "$d2" = 5 ]; then
     pass "counts stay isolated per SELECT db across connection reuse"
 else
     bad "db isolation: db1=$d1 want 3, db2=$d2 want 5"
+fi
+
+# --- check 5: custom script NOSCRIPT fallback + EVALSHA cache --------------
+# A custom (algo=custom) script takes the same EVALSHA -> NOSCRIPT -> EVAL path
+# as the built-ins, keyed by the SHA computed from its loaded body. The first
+# request after a SCRIPT FLUSH misses and falls back to EVAL (which loads the
+# script); the second request must then hit EVALSHA against the cached SHA.
+echo "== custom script (algo=custom): NOSCRIPT fallback then EVALSHA cache =="
+rcli flushall >/dev/null
+rcli script flush >/dev/null
+rcli config resetstat >/dev/null
+c1=$(code /cu)
+c2=$(code /cu)
+evalsha_calls=$(rcli info commandstats | tr -d '\r' \
+    | sed -n 's/.*cmdstat_evalsha:calls=\([0-9]*\).*/\1/p')
+evalsha_failed=$(rcli info commandstats | tr -d '\r' \
+    | sed -n 's/.*cmdstat_evalsha:.*failed_calls=\([0-9]*\).*/\1/p')
+eval_calls=$(rcli info commandstats | tr -d '\r' \
+    | sed -n 's/.*cmdstat_eval:calls=\([0-9]*\).*/\1/p')
+evalsha_calls="${evalsha_calls:-0}"
+evalsha_failed="${evalsha_failed:-0}"
+eval_calls="${eval_calls:-0}"
+note "responses=$c1,$c2 evalsha.calls=$evalsha_calls" \
+     "evalsha.failed_calls=$evalsha_failed eval.calls=$eval_calls"
+if [ "$c1" = 200 ] && [ "$c2" = 200 ] \
+   && [ "$evalsha_failed" -eq 1 ] && [ "$eval_calls" -ge 1 ] \
+   && [ "$evalsha_calls" -ge 2 ]; then
+    pass "custom script fell back to EVAL once, then served from the cached SHA"
+else
+    bad "custom script NOSCRIPT fallback / SHA cache"
 fi
 
 echo
