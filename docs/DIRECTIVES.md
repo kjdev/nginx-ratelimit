@@ -23,7 +23,9 @@ See also [Algorithms](#algorithms) and [Response headers](#response-headers).
 
 ```
 Syntax:  ratelimit_zone <name> key=<var> (rate=<N>r/<s|m|h> | requests=<N> period=<time>)
-                         [burst=<N>] [algo=fixed_window|token_bucket|gcra|sliding_window];
+                         [burst=<N>]
+                         [algo=fixed_window|token_bucket|gcra|sliding_window|custom]
+                         [script=<path>];
 Default: —
 Context: http
 ```
@@ -39,8 +41,11 @@ Defines a named rate. Unlike `limit_req_zone` it allocates **no** shared memory
   units (`30s`, `5m`, `1h`).
 - `burst=` — extra headroom above `requests` (default `0`). Its exact meaning is
   per algorithm (see [Algorithms](#algorithms)).
-- `algo=` — `fixed_window` (default), `token_bucket`, `gcra`, or
-  `sliding_window`.
+- `algo=` — `fixed_window` (default), `token_bucket`, `gcra`,
+  `sliding_window`, or `custom`.
+- `script=` — path to a user-supplied Lua script; **required** with
+  `algo=custom` and rejected otherwise. See
+  [Custom scripts](CUSTOM_SCRIPT.md).
 
 ## `ratelimit`
 
@@ -179,6 +184,7 @@ mutating state in every algorithm.
 | `token_bucket`   | `requests + burst` (capacity) | extra bucket capacity | `{tokens, ts}` hash |
 | `gcra`           | `burst + 1`                   | burst tolerance | theoretical arrival time |
 | `sliding_window` | `requests + burst`            | extra requests within the window | `{c, w, p}` integer hash |
+| `custom`         | whatever the script returns   | passed to the script as `ARGV[3]` | whatever the script stores |
 
 - **fixed_window** — `INCR` within a window of `period` seconds; the window
   rolls over via Redis key TTL. Simple and cheap; allows up to `2×limit` across
@@ -195,6 +201,12 @@ mutating state in every algorithm.
 Token bucket, GCRA, and sliding window derive the current time from
 `redis.call('TIME')`, so the limiter is consistent across NGINX workers and
 hosts.
+
+- **custom** — a user-supplied Lua script loaded from `script=`, receiving the
+  same `ARGV[1..4]` (`requests`, `period`, `burst`, `quantity`) as token bucket
+  and returning the same 5-integer reply. For arbitrary rate-control logic the
+  built-ins don't cover. See [Custom scripts](CUSTOM_SCRIPT.md) for the contract
+  and constraints.
 
 ## Response headers
 

@@ -29,7 +29,8 @@ This module is a fork of
 - Backend is **Redis only**. There is no shared-memory backend; for a
   single-node limit use the stock `limit_req`. This module is for the
   distributed case.
-- Algorithms: fixed window, token bucket, GCRA, sliding window.
+- Algorithms: fixed window, token bucket, GCRA, sliding window, and `custom`
+  (bring your own Lua script — see [docs/CUSTOM_SCRIPT.md](docs/CUSTOM_SCRIPT.md)).
 - It does **not** extract auth claims. Give it an NGINX variable as the key and
   delegate authentication to `auth_jwt` / `auth_request` / an API-key module.
 - Redis Cluster (hash-tag / slot routing) is out of scope for now.
@@ -101,7 +102,7 @@ Summary; full Syntax/Default/Context and per-algorithm semantics are in
 
 | Directive | Purpose |
 |-----------|---------|
-| `ratelimit_zone` | Define a named rate (`key=`, `rate=`/`requests=`+`period=`, `burst=`, `algo=`); allocates no shared memory. |
+| `ratelimit_zone` | Define a named rate (`key=`, `rate=`/`requests=`+`period=`, `burst=`, `algo=`, `script=` for `algo=custom`); allocates no shared memory. |
 | `ratelimit` | Apply a zone to the current context. |
 | `ratelimit_pass` | The Redis upstream (or address / variable) to query. |
 | `ratelimit_prefix` | Prefix prepended to the key to namespace counters. |
@@ -156,6 +157,8 @@ captured results.
 - [docs/INSTALL.md](docs/INSTALL.md) — requirements and build steps.
 - [docs/DIRECTIVES.md](docs/DIRECTIVES.md) — full directive reference, algorithm
   semantics, and response headers.
+- [docs/CUSTOM_SCRIPT.md](docs/CUSTOM_SCRIPT.md) — bring-your-own Lua script
+  (`algo=custom`): the contract, an example, and constraints.
 - [docs/EXAMPLES.md](docs/EXAMPLES.md) — configuration recipes.
 - [benchmark/README.md](benchmark/README.md) — benchmarks and results.
 
