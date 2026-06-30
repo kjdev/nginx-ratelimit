@@ -624,8 +624,15 @@ ngx_http_ratelimit_process_header(ngx_http_request_t *r)
             && ngx_strncmp(b->pos + 1, "NOSCRIPT", sizeof("NOSCRIPT") - 1)
             == 0)
         {
-            if (ngx_http_ratelimit_resend_eval(r) != NGX_OK) {
-                return NGX_ERROR;
+            ngx_int_t rc;
+
+            /* Propagate the mapped status: resend_eval returns
+             * NGX_HTTP_BAD_GATEWAY on a write-side transport drop (handled like
+             * any other transport failure) and NGX_ERROR on an internal fault
+             * (stays 500). */
+            rc = ngx_http_ratelimit_resend_eval(r);
+            if (rc != NGX_OK) {
+                return rc;
             }
 
             return NGX_AGAIN;

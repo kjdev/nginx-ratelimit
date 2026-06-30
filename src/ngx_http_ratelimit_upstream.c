@@ -471,6 +471,15 @@ ngx_http_ratelimit_read_header_handler(ngx_http_request_t *r,
         return;
     }
 
+    /* A write-side drop while resending EVAL on NOSCRIPT surfaces here as a
+     * transport failure; finalize with 502 so it is handled like every other
+     * Redis transport drop (fail-open under "ratelimit_on_error allow"). */
+    if (rc == NGX_HTTP_BAD_GATEWAY) {
+        ngx_http_ratelimit_finalize_upstream_request(
+            r, u, NGX_HTTP_BAD_GATEWAY);
+        return;
+    }
+
     if (rc == NGX_ERROR) {
         ngx_http_ratelimit_finalize_upstream_request(
             r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -517,7 +526,12 @@ ngx_http_ratelimit_send_eval(ngx_http_request_t *r)
         }
 
         if (n == NGX_ERROR) {
-            return NGX_ERROR;
+            /* A write-side connection drop is a Redis transport failure, like
+             * the read-path premature close / read error (both map to 502).
+             * Return the mapped status so "ratelimit_on_error allow" fails open
+             * on it; NGX_ERROR stays reserved for internal faults such as the
+             * failed event registration above. */
+            return NGX_HTTP_BAD_GATEWAY;
         }
 
         b->pos += n;
@@ -533,8 +547,14 @@ static void
 ngx_http_ratelimit_send_eval_handler(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
-    if (ngx_http_ratelimit_send_eval(r) != NGX_OK) {
-        ngx_http_ratelimit_finalize_upstream_request(r, u, NGX_ERROR);
+    ngx_int_t rc;
+
+    /* rc carries NGX_HTTP_BAD_GATEWAY on a transport drop and NGX_ERROR on an
+     * internal fault; finalize maps both (502 via state->status, NGX_ERROR to
+     * 500), so pass it through rather than collapsing every failure into a 500. */
+    rc = ngx_http_ratelimit_send_eval(r);
+    if (rc != NGX_OK) {
+        ngx_http_ratelimit_finalize_upstream_request(r, u, rc);
     }
 }
 
