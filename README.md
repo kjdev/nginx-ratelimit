@@ -92,8 +92,10 @@ serves all algorithms.
   connection.
 - If the key variable resolves to an empty value the request is **not limited**
   (the handler declines and the request proceeds).
-- If Redis is unreachable or returns an error, the request **fails closed**
-  (rejected with `503`), not open.
+- If Redis is unreachable or returns an error, the behaviour is controlled by
+  `ratelimit_on_error`: by default (`deny`) the request **fails closed**
+  (rejected with `503`), not open; set `allow` to **fail open** and let the
+  request proceed.
 
 ## Directives
 
@@ -129,7 +131,8 @@ The module targets managed Redis directly:
   of every rate check (no extra round trip), and `keepalive` amortises the
   connection setup.
 - **Connection drop.** If Redis is unreachable the request fails closed
-  (`503`), so an outage cannot silently disable limiting.
+  (`503`) by default (`ratelimit_on_error deny`), so an outage cannot silently
+  disable limiting; set `ratelimit_on_error allow` to fail open instead.
 
 How this is verified in this repo:
 
