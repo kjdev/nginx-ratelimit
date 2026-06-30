@@ -29,6 +29,12 @@ static ngx_conf_num_bounds_t ngx_http_ratelimit_status_bounds = {
     ngx_conf_check_num_bounds, 400, 599
 };
 
+static ngx_conf_enum_t ngx_http_ratelimit_on_error[] = {
+    { ngx_string("deny"), NGX_HTTP_RATELIMIT_ON_ERROR_DENY },
+    { ngx_string("allow"), NGX_HTTP_RATELIMIT_ON_ERROR_ALLOW },
+    { ngx_null_string, 0 }
+};
+
 static ngx_command_t ngx_http_ratelimit_commands[] = {
 
     { ngx_string("ratelimit_zone"),
@@ -88,6 +94,13 @@ static ngx_command_t ngx_http_ratelimit_commands[] = {
       ngx_conf_set_num_slot, NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_ratelimit_loc_conf_t, status_code),
       &ngx_http_ratelimit_status_bounds },
+
+    { ngx_string("ratelimit_on_error"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
+      NGX_CONF_TAKE1,
+      ngx_conf_set_enum_slot, NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_ratelimit_loc_conf_t, on_error),
+      &ngx_http_ratelimit_on_error },
 
     { ngx_string("ratelimit_buffer_size"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
@@ -210,6 +223,7 @@ ngx_http_ratelimit_create_loc_conf(ngx_conf_t *cf)
     conf->enable_headers = NGX_CONF_UNSET;
     conf->status_code = NGX_CONF_UNSET_UINT;
     conf->limit_log_level = NGX_CONF_UNSET_UINT;
+    conf->on_error = NGX_CONF_UNSET_UINT;
 
     conf->burst = NGX_CONF_UNSET;
     conf->quantity = NGX_CONF_UNSET_UINT;
@@ -305,6 +319,8 @@ ngx_http_ratelimit_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
                               NGX_HTTP_TOO_MANY_REQUESTS);
     ngx_conf_merge_uint_value(conf->limit_log_level, prev->limit_log_level,
                               NGX_LOG_ERR);
+    ngx_conf_merge_uint_value(conf->on_error, prev->on_error,
+                              NGX_HTTP_RATELIMIT_ON_ERROR_DENY);
 
     ngx_conf_merge_str_value(conf->prefix, prev->prefix, "");
     ngx_conf_merge_uint_value(conf->quantity, prev->quantity, 1);

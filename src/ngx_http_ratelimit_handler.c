@@ -84,6 +84,28 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
          * timeout, ...) surfaces its HTTP status here so the phase engine
          * emits it exactly once on this re-entry, failing the request closed. */
         if (status >= NGX_HTTP_BAD_REQUEST) {
+
+            /* fail-open: when "ratelimit_on_error allow" is set, let the
+             * request through instead of rejecting it, but only for a Redis
+             * transport failure. The upstream layer assigns these statuses
+             * exclusively to transport errors: 503 (connect refused), 504
+             * (timeout), 502 (connection dropped / premature close). A 500 is
+             * reserved for internal and contract errors (a malformed reply, a
+             * config fault); those stay fail-closed so a broken script or
+             * setup is never silently allowed. */
+            if (rlcf->on_error == NGX_HTTP_RATELIMIT_ON_ERROR_ALLOW
+                && (status == NGX_HTTP_BAD_GATEWAY
+                    || status == NGX_HTTP_SERVICE_UNAVAILABLE
+                    || status == NGX_HTTP_GATEWAY_TIME_OUT))
+            {
+                ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
+                              "ratelimit: redis unavailable (status %ui), "
+                              "failing open for zone \"%V\"",
+                              status, &rlcf->zone->name);
+
+                return NGX_OK;
+            }
+
             return (ngx_int_t) status;
         }
 
@@ -669,8 +691,14 @@ ngx_http_ratelimit_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 
     rlcf = ngx_http_get_module_loc_conf(r, ngx_http_ratelimit_module);
 
+    /* Emit the rate headers only when they carry real counter data: a 429
+     * (always) or an allowed request with "ratelimit_headers on". On an error
+     * status the 5-integer reply was never parsed, so ctx->limit/remaining are
+     * still zero; emitting them would advertise a bogus "0 remaining" (most
+     * visibly on a fail-open 200). Suppress them on every error path. */
     if (r->upstream->state->status == NGX_HTTP_TOO_MANY_REQUESTS
-        || rlcf->enable_headers)
+        || (rlcf->enable_headers
+            && r->upstream->state->status == NGX_HTTP_OK))
     {
         /* X-RateLimit-Limit HTTP header */
         (void) ngx_http_ratelimit_set_custom_header(r, &x_limit_header,

@@ -431,9 +431,14 @@ ngx_http_ratelimit_read_header_handler(ngx_http_request_t *r,
                           "redis prematurely closed connection");
         }
 
+        /* A premature close or read error here is a Redis transport failure,
+         * not a contract violation: map it to 502 so it matches the body-read
+         * phase (read->eof / read->error) and the "ratelimit_on_error allow"
+         * fail-open path treats every transport drop alike. 500 stays reserved
+         * for internal and contract faults. */
         if (n == NGX_ERROR || n == 0) {
             ngx_http_ratelimit_finalize_upstream_request(
-                r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
+                r, u, NGX_HTTP_BAD_GATEWAY);
             return;
         }
 

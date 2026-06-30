@@ -16,6 +16,15 @@ extern ngx_module_t ngx_http_ratelimit_module;
  * the EVAL fallback frame small. */
 #define NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN  65536
 
+/* Behaviour when the limiter cannot reach a verdict because Redis is
+ * unreachable (connect refused, timeout, connection dropped). DENY keeps the
+ * safe fail-closed default (the request is rejected); ALLOW fails open and lets
+ * the request through. Selected by "ratelimit_on_error". Internal and contract
+ * errors (a 500 from a malformed reply or a config fault) stay fail-closed
+ * regardless: only the transport-error statuses honour ALLOW. */
+#define NGX_HTTP_RATELIMIT_ON_ERROR_DENY   0
+#define NGX_HTTP_RATELIMIT_ON_ERROR_ALLOW  1
+
 typedef enum {
     NGX_HTTP_RATELIMIT_ALGO_FIXED_WINDOW = 0,
     NGX_HTTP_RATELIMIT_ALGO_TOKEN_BUCKET,
@@ -70,6 +79,7 @@ typedef struct {
     ngx_flag_t                 enable_headers;
     ngx_uint_t                 status_code;
     ngx_uint_t                 limit_log_level;
+    ngx_uint_t                 on_error; /* DENY (fail-closed) | ALLOW (open) */
 
     ngx_str_t                  prefix;
     ngx_uint_t                 quantity;
