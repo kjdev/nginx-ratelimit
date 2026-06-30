@@ -176,9 +176,19 @@ ngx_http_ratelimit_process_redis_response(ngx_http_request_t *r,
 
             if (u->busy_bufs == NULL) {
 
-                if (u->length == 0
-                    || (upstream->read->eof && u->length == -1))
-                {
+                /* Success is signalled only by a fully parsed reply:
+                 * process_reply sets u->length = 0 at its done label, after all
+                 * 5 elements are read. While u->length == -1 the parse is still
+                 * incomplete, so an EOF in that state is a premature close, not
+                 * end-of-data. The upstream original treated EOF with
+                 * length == -1 as completion because there length == -1 means
+                 * "read until the peer closes"; our reply is a fixed-size RESP
+                 * array with a definite terminator, so a truncated read must
+                 * not be accepted. It falls through to the read->eof branch
+                 * below and is mapped to 502 (transport failure), keeping the
+                 * verdict from being silently allowed and matching the
+                 * header-read phase. */
+                if (u->length == 0) {
                     ngx_http_ratelimit_finalize_upstream_request(r, u, 0);
                     return;
                 }
