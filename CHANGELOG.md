@@ -33,6 +33,14 @@ changes from upstream.
   previously carried a misleading `0` since no counter was read); they are now
   emitted only on a `429` or an allowed request with `ratelimit_headers on`.
 
+### Fixed
+
+- Treat a Redis reply truncated before the verdict was fully parsed (the
+  connection closing mid-RESP) as a transport failure (`502`) instead of
+  silently allowing the request. This closes a fail-open hole where a
+  half-read reply bypassed limiting, and lets `ratelimit_on_error` govern the
+  outcome.
+
 ## [0.1.0] - 2026-06-24
 
 The entries below describe the work done since the fork.
