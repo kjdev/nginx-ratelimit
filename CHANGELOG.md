@@ -21,6 +21,17 @@ changes from upstream.
   closed. The body is loaded at config time (rejecting a missing, empty, or
   oversized file), and `EVALSHA` with `NOSCRIPT` → `EVAL` fallback works as for
   the built-in algorithms. See [`docs/CUSTOM_SCRIPT.md`](docs/CUSTOM_SCRIPT.md).
+- `ratelimit_on_error deny | allow` selects the behaviour when Redis is
+  unreachable. The default `deny` keeps the safe fail-closed behaviour;
+  `allow` fails open and lets the request through (logging a `warn` line).
+  Only transport failures (`502`/`503`/`504`) honour `allow`; an internal or
+  contract error (`500`) always fails closed.
+
+### Changed
+
+- The `X-RateLimit-*` headers are no longer emitted on an error response (they
+  previously carried a misleading `0` since no counter was read); they are now
+  emitted only on a `429` or an allowed request with `ratelimit_headers on`.
 
 ## [0.1.0] - 2026-06-24
 
