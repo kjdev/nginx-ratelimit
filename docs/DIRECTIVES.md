@@ -13,6 +13,7 @@ Full reference for `ngx_http_ratelimit_module`. See the
 - [`ratelimit_database`](#ratelimit_database) — `SELECT` before each rate check
 - [`ratelimit_headers`](#ratelimit_headers) — emit `X-RateLimit-*` when allowed
 - [`ratelimit_status`](#ratelimit_status) — status for a rejected request
+- [`ratelimit_on_error`](#ratelimit_on_error) — fail-closed or fail-open when Redis is unreachable
 - [`ratelimit_log_level`](#ratelimit_log_level) — log level for the exceeded message
 - [`ratelimit_buffer_size`](#ratelimit_buffer_size) — Redis reply buffer size
 - [`ratelimit_connect_timeout` / `ratelimit_send_timeout` / `ratelimit_read_timeout`](#ratelimit_connect_timeout--ratelimit_send_timeout--ratelimit_read_timeout) — Redis timeouts
@@ -141,6 +142,28 @@ Context: http, server, location
 ```
 
 HTTP status for a rejected request (`400`–`599`).
+
+## `ratelimit_on_error`
+
+```
+Syntax:  ratelimit_on_error deny | allow;
+Default: deny
+Context: http, server, location
+```
+
+Behaviour when the limiter cannot reach a verdict because Redis is unreachable
+(connect refused, timeout, connection dropped).
+
+- `deny` (default) — fail closed. The request is rejected with the Redis
+  transport status (`502`/`503`/`504`). This is the safe default: a Redis
+  outage cannot be used to bypass the limit.
+- `allow` — fail open. The request is let through unlimited and a `warn` line
+  is logged (`redis unavailable ..., failing open`).
+
+Only Redis transport failures honour `allow`. An internal or contract error —
+a malformed script reply or a configuration fault, surfaced as `500` — always
+fails closed regardless of this setting, so a broken script or setup is never
+silently allowed.
 
 ## `ratelimit_log_level`
 

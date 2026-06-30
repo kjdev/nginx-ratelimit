@@ -111,6 +111,7 @@ Summary; full Syntax/Default/Context and per-algorithm semantics are in
 | `ratelimit_database` | `SELECT <number>` on a newly opened connection. |
 | `ratelimit_headers` | Emit `X-RateLimit-*` on allowed responses too. |
 | `ratelimit_status` | HTTP status for a rejected request (default `429`). |
+| `ratelimit_on_error` | `deny` (fail closed, default) or `allow` (fail open) when Redis is unreachable. |
 | `ratelimit_log_level` | Log level for the "rate limit exceeded" message. |
 | `ratelimit_buffer_size` | Size of the buffer holding the Redis reply. |
 | `ratelimit_connect_timeout` / `_send_timeout` / `_read_timeout` | Redis connect / write / read timeouts. |
