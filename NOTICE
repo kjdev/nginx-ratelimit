@@ -22,8 +22,8 @@ upstream module above. Changes made in this project relative to upstream:
   - Redesigned the directives into a limit_req-style named-zone model
     (ratelimit_zone + ratelimit zone=); zones carry rate semantics only and
     allocate no shared memory (the counter lives in Redis).
-  - Added AUTH/SELECT connection initialization, sent only on freshly opened
-    connections (ratelimit_password / ratelimit_database).
+  - Added AUTH/SELECT connection initialization, pipelined ahead of every
+    rate check (ratelimit_password / ratelimit_database).
   - Fixed a heap-buffer-overflow in the key-prefix concatenation inherited
     from upstream (ngx_cpystrn over-read of the non-NUL-terminated key).
   - Adapted t/sanity.t to the EVALSHA semantics and zone directives.
