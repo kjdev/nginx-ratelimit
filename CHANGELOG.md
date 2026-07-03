@@ -14,6 +14,14 @@ changes from upstream.
 
 ### Fixed
 
+- A Redis reply that died mid-parse right after the status integer (e.g. a
+  corrupted or MITM'd `*5\r\n:1\r\nX`) could still surface
+  `X-RateLimit-Limit`/`X-RateLimit-Remaining`/`X-RateLimit-Reset`/`Retry-After`
+  built from unparsed (zeroed) counters, because the header-emission gate
+  checked `u->state->status` (set as soon as the status byte was read) before
+  the later remap to `500` ran. The response was still correctly fail-closed
+  (`500`); only the advertised counters were bogus. The gate now also
+  requires that the 5-integer reply parsed to completion.
 - The completion finalize for a Redis reply that arrived split across
   multiple reads passed `NGX_OK` instead of `NGX_DONE`, unlike the sibling
   single-read completion path. `NGX_OK` triggers nginx core side effects
