@@ -207,6 +207,7 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
+        ngx_memzero(&url, sizeof(ngx_url_t));
         url.host = target;
         url.port = 0;
         url.no_resolve = 1;
@@ -503,6 +504,45 @@ ngx_http_ratelimit_build_prelude(ngx_http_request_t *r,
     return NGX_OK;
 }
 
+#define NGX_HTTP_RATELIMIT_LOG_SANITIZE_MAX 128
+
+/*
+ * Copy a Redis-supplied string into the request pool, capped at
+ * NGX_HTTP_RATELIMIT_LOG_SANITIZE_MAX bytes with non-printable bytes replaced
+ * by '.'. A compromised or MITM'd Redis peer otherwise controls raw bytes
+ * that "%V" writes verbatim into the error log, letting embedded CR/LF forge
+ * extra log lines and embedded escape sequences hit the log viewer's
+ * terminal.
+ */
+static ngx_str_t
+ngx_http_ratelimit_sanitize_log_str(ngx_http_request_t *r, ngx_str_t *src)
+{
+    u_char *dst;
+    ngx_uint_t i, n;
+    ngx_str_t out;
+
+    n = src->len;
+    if (n > NGX_HTTP_RATELIMIT_LOG_SANITIZE_MAX) {
+        n = NGX_HTTP_RATELIMIT_LOG_SANITIZE_MAX;
+    }
+
+    dst = ngx_pnalloc(r->pool, n);
+    if (dst == NULL) {
+        ngx_str_null(&out);
+        return out;
+    }
+
+    for (i = 0; i < n; i++) {
+        dst[i] = (src->data[i] >= 0x20 && src->data[i] < 0x7f)
+                 ? src->data[i] : '.';
+    }
+
+    out.data = dst;
+    out.len = n;
+
+    return out;
+}
+
 /*
  * Consume one AUTH/SELECT reply ("+OK" / "-ERR") sitting at the head of the
  * buffer. NGX_AGAIN if the line has not fully arrived; NGX_ERROR on a redis
@@ -536,6 +576,8 @@ ngx_http_ratelimit_consume_prelude_reply(ngx_http_request_t *r, ngx_buf_t *b)
     if (reply.len > 0 && reply.data[reply.len - 1] == CR) {
         reply.len--;
     }
+
+    reply = ngx_http_ratelimit_sanitize_log_str(r, &reply);
 
     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                   "ratelimit: redis auth/select error reply: \"%V\"", &reply);
@@ -645,6 +687,8 @@ ngx_http_ratelimit_process_header(ngx_http_request_t *r)
             buf.len--;
         }
 
+        buf = ngx_http_ratelimit_sanitize_log_str(r, &buf);
+
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "ratelimit: redis error reply: \"%V\"", &buf);
 
@@ -653,6 +697,7 @@ ngx_http_ratelimit_process_header(ngx_http_request_t *r)
 
     buf.data = b->pos;
     buf.len = b->last - b->pos;
+    buf = ngx_http_ratelimit_sanitize_log_str(r, &buf);
 
     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                   "ratelimit: redis sent invalid response: \"%V\"", &buf);

@@ -526,12 +526,16 @@ ngx_http_ratelimit_send_eval(ngx_http_request_t *r)
 
         if (n == NGX_AGAIN) {
             /* The socket is not writable yet; flush the rest from a write
-             * event. The read handler stays in place for the reply. */
+             * event, guarded by ratelimit_send_timeout like the original send
+             * (stock ngx_http_upstream_send_request does the same). The read
+             * handler stays in place for the reply. */
             u->write_event_handler = ngx_http_ratelimit_send_eval_handler;
 
             if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
                 return NGX_ERROR;
             }
+
+            ngx_add_timer(c->write, u->conf->send_timeout);
 
             return NGX_OK;
         }
@@ -549,6 +553,10 @@ ngx_http_ratelimit_send_eval(ngx_http_request_t *r)
     }
 
     /* Fully sent; we never write again on this request. */
+    if (c->write->timer_set) {
+        ngx_del_timer(c->write);
+    }
+
     u->write_event_handler = ngx_http_ratelimit_dummy_handler;
 
     return NGX_OK;
@@ -559,6 +567,16 @@ ngx_http_ratelimit_send_eval_handler(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
     ngx_int_t rc;
+    ngx_connection_t *c;
+
+    c = u->peer.connection;
+
+    if (c->write->timedout) {
+        ngx_connection_error(c, NGX_ETIMEDOUT, "redis timed out");
+        ngx_http_ratelimit_finalize_upstream_request(
+            r, u, NGX_HTTP_GATEWAY_TIME_OUT);
+        return;
+    }
 
     /* rc carries NGX_HTTP_BAD_GATEWAY on a transport drop and NGX_ERROR on an
      * internal fault; finalize maps both (502 via state->status, NGX_ERROR to
