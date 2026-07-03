@@ -10,6 +10,18 @@ This module is a fork of
 (BSD-3-Clause); see [`NOTICE`](NOTICE) for provenance and the full list of
 changes from upstream.
 
+## [Unreleased]
+
+### Fixed
+
+- The completion finalize for a Redis reply that arrived split across
+  multiple reads passed `NGX_OK` instead of `NGX_DONE`, unlike the sibling
+  single-read completion path. `NGX_OK` triggers nginx core side effects
+  (marking the request done, tearing down the client's read/write timers)
+  before the phase re-entry that emits the real verdict, so `$request_completion`
+  could read `"OK"` before the response was actually sent and the client
+  could briefly lose its timeout.
+
 ## [0.2.0] - 2026-07-01
 
 ### Added
