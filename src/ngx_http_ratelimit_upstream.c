@@ -189,7 +189,8 @@ ngx_http_ratelimit_process_redis_response(ngx_http_request_t *r,
                  * verdict from being silently allowed and matching the
                  * header-read phase. */
                 if (u->length == 0) {
-                    ngx_http_ratelimit_finalize_upstream_request(r, u, 0);
+                    ngx_http_ratelimit_finalize_upstream_request(r, u,
+                                                                 NGX_DONE);
                     return;
                 }
 
