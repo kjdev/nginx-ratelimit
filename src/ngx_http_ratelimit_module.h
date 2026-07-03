@@ -16,6 +16,13 @@ extern ngx_module_t ngx_http_ratelimit_module;
  * the EVAL fallback frame small. */
 #define NGX_HTTP_RATELIMIT_MAX_SCRIPT_LEN  65536
 
+/* Largest integer Redis's embedded Lua (5.1) can represent exactly: every
+ * ARGV value is parsed with tonumber() into an IEEE-754 double, which loses
+ * integer precision beyond 2^53-1. requests+burst is returned verbatim as
+ * the "limit"/"capacity" reply field by every built-in algorithm, so both
+ * must stay within this bound or the reply corrupts silently. */
+#define NGX_HTTP_RATELIMIT_LUA_MAX_SAFE_INT  9007199254740991
+
 /* Behaviour when the limiter cannot reach a verdict because Redis is
  * unreachable (connect refused, timeout, connection dropped). DENY keeps the
  * safe fail-closed default (the request is rejected); ALLOW fails open and lets

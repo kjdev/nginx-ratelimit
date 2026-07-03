@@ -275,6 +275,24 @@ ngx_http_ratelimit_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_value(conf->burst, prev->burst, NGX_CONF_UNSET);
 
+    /* A per-location "ratelimit burst=" override bypasses the zone-level
+     * requests+burst check done in ngx_http_ratelimit_zone(); re-check here
+     * against the zone's requests so the override cannot push the sum past
+     * what Redis's embedded Lua can represent exactly. */
+    if (conf->zone != NULL
+        && conf->burst != NGX_CONF_UNSET
+        && (ngx_int_t) conf->zone->requests
+        > NGX_HTTP_RATELIMIT_LUA_MAX_SAFE_INT - conf->burst)
+    {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit zone \"%V\": \"requests\" + \"burst\" "
+                           "must not exceed %i (Lua double-precision "
+                           "integer limit)",
+                           &conf->zone_name,
+                           (ngx_int_t) NGX_HTTP_RATELIMIT_LUA_MAX_SAFE_INT);
+        return NGX_CONF_ERROR;
+    }
+
     ngx_conf_merge_msec_value(conf->upstream.connect_timeout,
                               prev->upstream.connect_timeout, 60000);
 
@@ -601,6 +619,19 @@ ngx_http_ratelimit_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                                                &zone->script_body)
         != NGX_OK)
     {
+        return NGX_CONF_ERROR;
+    }
+
+    /* requests+burst is returned as-is by the Lua scripts as the "limit"/
+     * "capacity" reply field; beyond 2^53-1 Redis's embedded Lua can no
+     * longer represent it exactly and the reply silently corrupts. */
+    if (requests > NGX_HTTP_RATELIMIT_LUA_MAX_SAFE_INT - burst) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "ratelimit_zone \"%V\": \"requests\" + \"burst\" "
+                           "must not exceed %i (Lua double-precision "
+                           "integer limit)",
+                           &value[1],
+                           (ngx_int_t) NGX_HTTP_RATELIMIT_LUA_MAX_SAFE_INT);
         return NGX_CONF_ERROR;
     }
 
