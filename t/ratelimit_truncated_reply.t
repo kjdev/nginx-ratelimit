@@ -7,6 +7,12 @@
 # mapped to 502: fail-closed by default, fail-open only under
 # "ratelimit_on_error allow". Before the fix the half-read reply was silently
 # treated as allowed regardless of the on_error setting.
+#
+# TEST 3 covers a reply that dies right after the status byte is accepted
+# ("*5\r\n:1\r\nX": the parser sets status=429 on the "1", then errors on the
+# garbage byte). Before the fix, finalize_request ran before the error status
+# was remapped to 500, saw status==429, and emitted X-RateLimit-*/Retry-After
+# built from the still-unparsed (zeroed) limit/remaining/reset/retry_after.
 
 use Test::Nginx::Socket 'no_plan';
 
@@ -68,3 +74,24 @@ __DATA__
 --- error_code: 200
 --- response_body
 200 OK
+
+=== TEST 3: a reply corrupted right after the status byte fails closed (500) without leaking partial headers
+--- http_config eval: $::HttpConfig
+--- config
+    location /t {
+        ratelimit zone=trunc;
+        ratelimit_prefix truncz;
+        ratelimit_pass redis_mock;
+        ratelimit_headers on;
+    }
+--- request
+    GET /t
+--- tcp_listen: 8967
+--- tcp_reply eval
+"*5\r\n:1\r\nX"
+--- error_code: 500
+--- response_headers
+!X-RateLimit-Limit
+!X-RateLimit-Remaining
+!X-RateLimit-Reset
+!Retry-After
