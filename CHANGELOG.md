@@ -44,6 +44,14 @@ changes from upstream.
   `ratelimit_send_timeout` did not bound the resend. It now arms/clears
   `c->write`'s timer like the original send, and the write handler checks
   `c->write->timedout` to fail closed with `504` like the read path does.
+- `requests + burst` is returned verbatim as the "limit"/"capacity" reply
+  field by every built-in algorithm, but Redis's embedded Lua (5.1)
+  represents all numbers as IEEE-754 doubles, which lose integer precision
+  beyond 2^53-1 (9007199254740991). A sum past that bound silently
+  corrupted in Lua's `tonumber()` and in Redis's RESP integer conversion.
+  Config load now rejects a `ratelimit_zone` (or a per-location `ratelimit
+  ... burst=` override) whose effective `requests + burst` would exceed
+  this limit.
 
 ## [0.2.0] - 2026-07-01
 
