@@ -284,5 +284,7 @@ done:
     u->keepalive = 1;
     u->length = 0;
 
+    ctx->reply_parsed = 1;
+
     return NGX_OK;
 }

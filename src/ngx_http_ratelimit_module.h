@@ -96,6 +96,11 @@ typedef struct {
     /* flag indicating whether the rate limit has been finalized */
     ngx_flag_t          finalized;
 
+    /* set once the 5-integer reply has been parsed to completion; guards
+     * against emitting limit/remaining/reset/retry_after from a reply that
+     * died mid-parse (they would still hold stale/zeroed values) */
+    ngx_flag_t          reply_parsed;
+
     /* set once EVALSHA hit NOSCRIPT and we fell back to EVAL */
     ngx_flag_t          eval_fallback;
 

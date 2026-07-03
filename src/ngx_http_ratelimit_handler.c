@@ -702,10 +702,17 @@ ngx_http_ratelimit_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
      * (always) or an allowed request with "ratelimit_headers on". On an error
      * status the 5-integer reply was never parsed, so ctx->limit/remaining are
      * still zero; emitting them would advertise a bogus "0 remaining" (most
-     * visibly on a fail-open 200). Suppress them on every error path. */
-    if (r->upstream->state->status == NGX_HTTP_TOO_MANY_REQUESTS
-        || (rlcf->enable_headers
-            && r->upstream->state->status == NGX_HTTP_OK))
+     * visibly on a fail-open 200). Suppress them on every error path.
+     *
+     * reply_parsed additionally guards the case where the reply dies
+     * mid-parse right after the status byte: u->state->status is set as
+     * soon as ARG1 is read, but finalize_request() runs before the later
+     * 500 remap, so a malformed reply can still show 429/200 here with
+     * only partially-parsed (or zeroed) limit/remaining/reset/retry_after. */
+    if (ctx->reply_parsed
+        && (r->upstream->state->status == NGX_HTTP_TOO_MANY_REQUESTS
+            || (rlcf->enable_headers
+                && r->upstream->state->status == NGX_HTTP_OK)))
     {
         /* X-RateLimit-Limit HTTP header */
         (void) ngx_http_ratelimit_set_custom_header(r, &x_limit_header,
