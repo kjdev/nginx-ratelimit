@@ -29,6 +29,21 @@ changes from upstream.
   before the phase re-entry that emits the real verdict, so `$request_completion`
   could read `"OK"` before the response was actually sent and the client
   could briefly lose its timeout.
+- Raw Redis reply bytes (AUTH/SELECT error, EVALSHA/EVAL error, invalid
+  response) were written to the error log verbatim via `%V`; a compromised
+  or MITM'd Redis peer could embed CR/LF to forge extra log lines or escape
+  sequences aimed at a terminal log viewer. These three log sites now go
+  through a sanitizer that strips non-printable bytes and caps the logged
+  length.
+- The stack `ngx_url_t` built from `ratelimit_pass` was left with its
+  `default_port` field uninitialized; nginx < 1.11.6 compares it when
+  matching an existing upstream, so an unlucky stack value could cause a
+  spurious upstream mismatch. It is now `ngx_memzero`'d before use.
+- `ngx_http_ratelimit_send_eval()`, the write side of the `-NOSCRIPT`
+  EVAL resend, never armed a send timer on a partial write, so
+  `ratelimit_send_timeout` did not bound the resend. It now arms/clears
+  `c->write`'s timer like the original send, and the write handler checks
+  `c->write->timedout` to fail closed with `504` like the read path does.
 
 ## [0.2.0] - 2026-07-01
 
