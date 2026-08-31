@@ -73,6 +73,7 @@ jobs:
         with:
           set-safe-directory: true
           persist-credentials: false
+          submodules: true
 
       - if: ${{ matrix.nginx == 'ubuntu' || matrix.nginx == 'alpine' }}
         name: Build NGINX module with distribution
