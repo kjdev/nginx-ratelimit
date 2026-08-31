@@ -76,8 +76,16 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
             return rlcf->status_code;
         }
 
+        /* NGX_DECLINED, not NGX_OK: ngx_http_core_generic_phase() (nginx
+         * src/http/ngx_http_core_module.c) treats NGX_OK from a PREACCESS
+         * handler as "cut the whole phase short" (r->phase_handler jumps to
+         * ph->next, the first handler of the *next* phase), not "this
+         * handler succeeded". Returning it here would skip every other
+         * PREACCESS handler still queued behind this one -- limit_req,
+         * limit_conn, realip, and any sibling auth module -- for every
+         * request this limiter allows. */
         if (status == NGX_HTTP_OK) {
-            return NGX_OK;
+            return NGX_DECLINED;
         }
 
         /* A hard upstream error (redis unreachable, AUTH/SELECT rejected,
@@ -103,7 +111,9 @@ ngx_http_ratelimit_handler(ngx_http_request_t *r)
                               "failing open for zone \"%V\"",
                               status, &rlcf->zone->name);
 
-                return NGX_OK;
+                /* See the NGX_DECLINED comment above: fail-open still means
+                 * "let the rest of PREACCESS run", not "cut the phase". */
+                return NGX_DECLINED;
             }
 
             return (ngx_int_t) status;
