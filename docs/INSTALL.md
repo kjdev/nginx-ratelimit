@@ -11,6 +11,10 @@ See the [README](../README.md) for an overview.
 
 ## Build
 
+This repository vendors the `nxe-phase` submodule (shared PREACCESS-ordering
+helper); clone with `--recurse-submodules`, or run
+`git submodule update --init` afterwards, before building.
+
 The module is built against the NGINX source with `--add-dynamic-module`. From
 an NGINX source tree matching your installed binary:
 

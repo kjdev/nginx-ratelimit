@@ -27,6 +27,15 @@ upstream module above. Changes made in this project relative to upstream:
   - Fixed a heap-buffer-overflow in the key-prefix concatenation inherited
     from upstream (ngx_cpystrn over-read of the non-NUL-terminated key).
   - Adapted t/sanity.t to the EVALSHA semantics and zone directives.
+  - Replaced the raw ngx_array_push PREACCESS registration (inherited from
+    upstream) with nxe_phase_add_handler (shared nxe-phase submodule), so the
+    handler runs at an explicit priority instead of at a position dictated by
+    load_module order.
+  - Fixed the PREACCESS handler to return NGX_DECLINED, not NGX_OK, on allow
+    (including the ratelimit_on_error allow fail-open path); NGX_OK is
+    interpreted by ngx_http_core_generic_phase() as "cut the phase short",
+    which was silently skipping every other PREACCESS handler queued behind
+    it.
 
 The BSD 3-Clause license text, retaining the upstream copyright notice as
 required, is in the LICENSE file.
