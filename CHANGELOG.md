@@ -10,6 +10,28 @@ This module is a fork of
 (BSD-3-Clause); see [`NOTICE`](NOTICE) for provenance and the full list of
 changes from upstream.
 
+## [Unreleased]
+
+### Fixed
+
+- The PREACCESS handler returned `NGX_OK` on allow (both the normal-allow
+  path and the `ratelimit_on_error allow` fail-open path). `NGX_OK` from a
+  PREACCESS handler tells `ngx_http_core_generic_phase()` to cut the whole
+  phase short and jump to the next phase, not "this handler succeeded" —
+  every other PREACCESS handler queued behind ratelimit (`limit_req`,
+  `limit_conn`, `realip`, sibling auth modules) was silently skipped for
+  every request ratelimit allowed. It now returns `NGX_DECLINED`.
+
+### Changed
+
+- The PREACCESS handler now registers through the shared `nxe-phase`
+  submodule at an explicit priority (800) instead of via a raw array push.
+  Previously, execution order among dynamically loaded PREACCESS modules
+  was the reverse of `load_module` order, an implicit and easy-to-get-wrong
+  dependency; a fixed priority lets `ratelimit_key` reliably reference
+  variables resolved by a sibling authentication module regardless of load
+  order.
+
 ## [0.2.1] - 2026-07-03
 
 ### Fixed
