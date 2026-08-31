@@ -1,3 +1,5 @@
+#include <nxe_phase.h>
+
 #include "ngx_http_ratelimit_module.h"
 #include "ngx_http_ratelimit_handler.h"
 #include "ngx_http_ratelimit_script.h"
@@ -769,22 +771,24 @@ ngx_http_ratelimit_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static ngx_int_t
 ngx_http_ratelimit_init(ngx_conf_t *cf)
 {
-    ngx_http_handler_pt *h;
-    ngx_http_core_main_conf_t *cmcf;
     ngx_http_ratelimit_main_conf_t *rmcf;
     ngx_http_ratelimit_zone_t *zone;
     ngx_http_variable_t *var;
     ngx_uint_t i;
     ngx_str_t name = ngx_string("ratelimit_done");
 
-    cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
-    h = ngx_array_push(&cmcf->phases[NGX_HTTP_PREACCESS_PHASE].handlers);
-
-    if (h == NULL) {
+    /* Priority 800 (NXE_PHASE_PRIO_RATELIMIT, nxe_phase.h) places this
+     * handler after the shared PREACCESS authentication band (httpsig 150 /
+     * jwt 200 / oauth2-token 250) regardless of load_module order, so a
+     * "ratelimit_key" built from an auth-resolved variable (e.g.
+     * $jwt_claim_sub) sees it already populated. */
+    if (nxe_phase_add_handler(cf, NGX_HTTP_PREACCESS_PHASE,
+                              NXE_PHASE_PRIO_RATELIMIT,
+                              ngx_http_ratelimit_handler, "ratelimit")
+        != NGX_OK)
+    {
         return NGX_ERROR;
     }
-
-    *h = ngx_http_ratelimit_handler;
 
     /* Reserve a per-request variable slot for the one-shot "already decided"
      * marker. The handler writes/reads the slot directly via
