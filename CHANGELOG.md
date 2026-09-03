@@ -12,6 +12,8 @@ changes from upstream.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-03
+
 ### Fixed
 
 - The PREACCESS handler returned `NGX_OK` on allow (both the normal-allow
