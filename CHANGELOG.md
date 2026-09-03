@@ -12,6 +12,8 @@ changes from upstream.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-04
+
 ### Fixed
 
 - GitHub's auto-generated release archives (source tarball/zip) exclude
