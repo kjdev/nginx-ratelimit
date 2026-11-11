@@ -22,9 +22,10 @@ jobs:
   test:
     permissions:
       contents: read
+    name: test (${{ matrix.nginx.label }})
     runs-on: ubuntu-latest
     steps:
-      - if: ${{ matrix.nginx != 'alpine' }}
+      - if: ${{ matrix.nginx.version != 'alpine' }}
         name: Install build dependencies
         run: |
           sudo apt-get update
@@ -40,10 +41,10 @@ jobs:
             redis-server
           sudo cpanm -n Test::Nginx
         env:
-          nginx_version: ${{ matrix.nginx }}
+          nginx_version: ${{ matrix.nginx.version }}
           DEBIAN_FRONTEND: noninteractive
           PERL_MM_USE_DEFAULT: 1
-      - if: ${{ matrix.nginx == 'alpine' }}
+      - if: ${{ matrix.nginx.version == 'alpine' }}
         name: Install build dependencies with Alpine
         run: |
           apk add \
@@ -75,7 +76,7 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - if: ${{ matrix.nginx == 'ubuntu' || matrix.nginx == 'alpine' }}
+      - if: ${{ matrix.nginx.version == 'ubuntu' || matrix.nginx.version == 'alpine' }}
         name: Build NGINX module with distribution
         run: |
           # Download Nginx
@@ -105,8 +106,8 @@ jobs:
           ${sudo} mkdir -p /usr/local/sbin
           ${sudo} ln -sfn /usr/sbin/nginx /usr/local/sbin/nginx
         env:
-          dist: ${{ matrix.nginx }}
-      - if: ${{ matrix.nginx != 'ubuntu' && matrix.nginx != 'alpine' }}
+          dist: ${{ matrix.nginx.version }}
+      - if: ${{ matrix.nginx.version != 'ubuntu' && matrix.nginx.version != 'alpine' }}
         name: Build NGINX module with sources
         run: |
           # Download Nginx
@@ -123,7 +124,7 @@ jobs:
           sudo cp objs/ngx_http_ratelimit_module.so /usr/lib/nginx/modules/
           sudo cp objs/nginx /usr/local/sbin/
         env:
-          nginx_version: ${{ matrix.nginx }}
+          nginx_version: ${{ matrix.nginx.version }}
 
       - name: Prepare tests
         run: |
@@ -183,10 +184,14 @@ jobs:
     strategy:
       matrix:
         nginx:
-          - alpine
-          - ubuntu
-          - '1.30.4' # stable
-          - '1.31.4' # mainline
+          - version: 'alpine'
+            label: 'alpine'
+          - version: 'ubuntu'
+            label: 'ubuntu'
+          - version: '1.30.4'
+            label: 'stable'
+          - version: '1.31.4'
+            label: 'mainline'
     container:
-      image: ${{ matrix.nginx == 'alpine' && 'alpine:latest' || null }}
-      options: ${{ matrix.nginx == 'alpine' && '--init' || null }}
+      image: ${{ matrix.nginx.version == 'alpine' && 'alpine:latest' || null }}
+      options: ${{ matrix.nginx.version == 'alpine' && '--init' || null }}
